@@ -271,7 +271,7 @@ RBAC pivot table linking users and workspaces.
 | id           | UUID                     |
 | workspace_id | UUID                     |
 | amount       | Decimal                  |
-| status       | Enum (`PENDING`, `PAID`) |
+| status       | Enum (`PENDING`, `PAID`, `OVERDUE`, `CANCELED`) |
 
 ---
 
