@@ -1,0 +1,19 @@
+model ActivityLog {
+  id          String   @id @default(uuid())
+  workspaceId String
+  userId      String
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation("ActivityWorkspace", fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("ActivityUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
