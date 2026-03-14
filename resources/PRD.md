@@ -1,472 +1,434 @@
-# OpsCore ⚙️
-**"The Multi-Tenant SaaS Business Management Platform"**
+# ⚙️ OpsCore: Multi-Tenant Workspace & Operations Platform
+
+### Product Requirements Document (PRD)
 
 ---
 
-# Product Requirements Document (PRD)
+# 📌 Project Overview
+
+**OpsCore** is a B2B multi-tenant SaaS platform designed for **agencies, startups, and service-based companies** to manage internal operations, client projects, team collaboration, and billing from a centralized workspace.
+
+Each organization that registers creates an isolated **Workspace (Tenant)** with its own users, projects, tasks, and operational data.
+
+The platform enables businesses to:
+
+* Manage team members and permissions
+* Track projects and tasks
+* Generate invoices and handle billing
+* Monitor operational analytics
+* Automate internal workflows
+
+The system enforces:
+
+* Strict **multi-tenant data isolation**
+* **Role-Based Access Control (RBAC)**
+* Secure authentication
+* Seamless subscription and invoice payments
+
+OpsCore is designed to be **scalable, modular, and secure**, following modern SaaS architecture principles.
 
 ---
 
-# Project Overview
+# 🏗 System Architecture
 
-OpsCore is a multi-tenant SaaS platform designed to help businesses manage their **operations, users, products, orders, analytics, and automation** from a single centralized system.
+```
+Client (Next.js)
+      ↓
+API Server (Express + Node.js)
+      ↓
+Authentication Layer (JWT)
+      ↓
+Application Services
+      ↓
+Prisma ORM
+      ↓
+PostgreSQL Database
+```
 
-Each company that signs up becomes a **Tenant (Workspace)** with isolated data and its own team members.
+Optional infrastructure:
 
-OpsCore enables businesses to:
-
-- Manage employees and roles
-- Handle products and inventory
-- Track customers and orders
-- Generate invoices
-- Monitor analytics dashboards
-- Automate workflows
-
-The system is built using a **secure multi-tenant architecture**, ensuring **complete data isolation between companies**.
-
----
-
-# Core Concepts
-
-| Concept | Description |
-|--------|-------------|
-| Tenant | A company or organization using the platform |
-| Workspace | The isolated environment belonging to a tenant |
-| User | A person working inside a tenant workspace |
-| Role | Defines user permissions |
-| Permission | Specific actions users can perform |
+* Redis (caching)
+* Docker (containerization)
+* Cloud Storage (file uploads)
 
 ---
 
-# Roles & Permissions
-
-| Role | Description | Key Permissions |
-|------|-------------|----------------|
-| Super Admin | Platform owner | Manage tenants, global settings |
-| Tenant Admin | Business owner | Manage users, roles, settings |
-| Manager | Operational manager | Manage products, orders, reports |
-| Staff | Employees | Perform assigned operational tasks |
-
-> **Note:** Each tenant manages their own users, roles, and permissions.
-
----
-
-# Tech Stack
-
-## Backend
-- Node.js
-- Express.js
-- TypeScript
-- Prisma ORM
-- PostgreSQL
+# 🏗 Technology Stack
 
 ## Frontend
-- Next.js
-- Tailwind CSS
-- ShadCN UI
+
+* Next.js
+* Tailwind CSS
+* ShadCN UI
+* React Hook Form
+* Zod (schema validation)
+
+## Backend
+
+* Node.js
+* Express.js
+* TypeScript
+* Prisma ORM
+
+## Database
+
+* PostgreSQL (relational multi-tenant architecture)
 
 ## Authentication
-- JWT Authentication
-- Role Based Access Control (RBAC)
 
-## Infrastructure
-- Docker
-- Redis (optional caching)
-- Cloud Storage
+* JWT authentication
+* HttpOnly secure cookies
 
----
+## Payments
 
-# Features
-
-## Public Features
-
-- Landing page
-- Platform overview
-- Pricing
-- Business registration
-- Login / Authentication
+* Stripe integration
 
 ---
 
-## Tenant Features
+# 🎯 Core Product Features
+
+## 1️⃣ Core Functionality
+
+### Multi-Tenant Authentication
+
+Users can register and create a **workspace**, automatically becoming the **Workspace Owner**.
 
 ### Workspace Management
 
-- Create workspace
-- Manage company profile
-- Configure business settings
+Users can:
 
-### User Management
-
-- Invite employees
-- Assign roles
-- Manage permissions
-- Suspend or remove users
-
-### Product Management
-
-- Create products/services
-- Organize categories
-- Track inventory
-- Update product details
-
-### Customer Management
-
-- Store customer data
-- Track purchase history
-- Manage customer relationships
-
-### Order Management
-
-- Create orders
-- Track order lifecycle
-- Update order status
-- Manage order fulfillment
-
-### Invoice Management
-
-- Generate invoices
-- Track payments
-- Manage billing records
-
-### Notifications
-
-- System alerts
-- Order updates
-- User activity notifications
-
-### Automation
-
-- Trigger actions
-- Schedule workflows
-- Automate repetitive operations
-
-### Audit Logs
-
-- Track user activities
-- Security monitoring
-- System transparency
-
-### Dashboard & Analytics
-
-- Sales analytics
-- Order statistics
-- Business performance metrics
-- Real-time insights
+* Create workspace
+* Switch between workspaces
+* Update workspace settings
+* Manage billing and subscription
 
 ---
 
-# Pages & Routes
+### Role-Based Access Control (RBAC)
 
-These routes are examples and may be extended.
-
----
-
-## Public Routes
-
-| Route | Page | Description |
-|------|------|-------------|
-| `/` | Landing Page | Platform overview |
-| `/pricing` | Pricing | Subscription plans |
-| `/login` | Login | User authentication |
-| `/register` | Register | Create tenant workspace |
+| Role   | Permissions                                                  |
+| ------ | ------------------------------------------------------------ |
+| Owner  | Full workspace control, billing management, delete workspace |
+| Admin  | Manage users, projects, tasks, and invoices                  |
+| Member | View assigned projects and update tasks                      |
 
 ---
 
-## Tenant Routes (Private)
+### Complex CRUD Operations
 
-| Route | Page | Description |
-|------|------|-------------|
-| `/dashboard` | Dashboard | Analytics & summary |
-| `/users` | User Management | Manage employees |
-| `/roles` | Roles | Manage role permissions |
-| `/products` | Products | Manage product catalog |
-| `/categories` | Categories | Product categories |
-| `/customers` | Customers | Customer management |
-| `/orders` | Orders | Track and manage orders |
-| `/invoices` | Invoices | Billing and payments |
-| `/notifications` | Notifications | Alerts & updates |
-| `/automation` | Automation | Workflow automation |
-| `/audit-logs` | Audit Logs | System activity tracking |
+The system manages relational data across:
+
+```
+Workspace → Projects → Tasks → Invoices
+```
 
 ---
 
-## Super Admin Routes
+### Payment System
 
-| Route | Page | Description |
-|------|------|-------------|
-| `/admin` | Admin Dashboard | Global analytics |
-| `/admin/tenants` | Tenants | Manage all companies |
-| `/admin/users` | Users | Platform user management |
-| `/admin/settings` | Settings | System configuration |
+Stripe integration enables:
 
----
+* Workspace subscription plans
+* Invoice payment processing
+* Billing management
 
-# Database Tables
+Subscription tiers:
 
-### Tenants
-
-| Field | Type |
-|------|------|
-| id | UUID |
-| name | String |
-| slug | String |
-| createdAt | Date |
-| updatedAt | Date |
+* **Free Plan**
+* **Pro Plan**
 
 ---
 
-### Users
+# 🖥 UI / UX Design
 
-| Field | Type |
-|------|------|
-| id | UUID |
-| tenantId | UUID |
-| name | String |
-| email | String |
-| password | String |
-| roleId | UUID |
-| status | Enum |
-| createdAt | Date |
+The platform follows a **modern SaaS dashboard layout**.
 
----
+### Features
 
-### Roles
-
-| Field | Type |
-|------|------|
-| id | UUID |
-| tenantId | UUID |
-| name | String |
+* Fully responsive design
+* Workspace-aware sidebar navigation
+* Clean dashboard UI
+* Skeleton loading states
+* Dark / Light mode support
+* Accessible components
 
 ---
 
-### Permissions
+# 🏠 Landing Page Structure
 
-| Field | Type |
-|------|------|
-| id | UUID |
-| name | String |
+The homepage includes:
 
----
+* Navbar
+* Hero section
+* Features section
+* Pricing section
+* Testimonials
+* Call-to-Action (CTA)
+* Footer
 
-### Products
-
-| Field | Type |
-|------|------|
-| id | UUID |
-| tenantId | UUID |
-| name | String |
-| price | Number |
-| stock | Number |
-| categoryId | UUID |
+This ensures compliance with the **UI rubric requirements**.
 
 ---
 
-### Categories
+# ⚠ Error Handling
 
-| Field | Type |
-|------|------|
-| id | UUID |
-| tenantId | UUID |
-| name | String |
+The platform uses standardized error responses.
 
----
+### Common HTTP Error Codes
 
-### Customers
+* `401 Unauthorized`
+* `403 Forbidden`
+* `404 Not Found`
+* `500 Internal Server Error`
 
-| Field | Type |
-|------|------|
-| id | UUID |
-| tenantId | UUID |
-| name | String |
-| email | String |
+### Validation
 
----
+* Zod schema validation for all API inputs
+* Form validation on frontend
 
-### Orders
+### User Feedback
 
-| Field | Type |
-|------|------|
-| id | UUID |
-| tenantId | UUID |
-| customerId | UUID |
-| status | Enum |
-| totalAmount | Number |
+* Toast notifications for errors
+* Clear human-readable messages
 
 ---
 
-### OrderItems
+# 🗄 Database Architecture
 
-| Field | Type |
-|------|------|
-| id | UUID |
-| orderId | UUID |
-| productId | UUID |
-| quantity | Number |
+Every operational table includes a:
 
----
+```
+workspace_id
+```
 
-### Invoices
-
-| Field | Type |
-|------|------|
-| id | UUID |
-| tenantId | UUID |
-| orderId | UUID |
-| amount | Number |
-| status | Enum |
+This ensures strict **tenant data isolation**.
 
 ---
 
-### Notifications
+## 1️⃣ Workspaces
 
-| Field | Type |
-|------|------|
-| id | UUID |
-| userId | UUID |
-| message | String |
-| read | Boolean |
-
----
-
-### AuditLogs
-
-| Field | Type |
-|------|------|
-| id | UUID |
-| userId | UUID |
-| action | String |
-| timestamp | Date |
+| Field              | Type      | Constraints   |
+| ------------------ | --------- | ------------- |
+| id                 | UUID      | Primary Key   |
+| name               | String    | Not Null      |
+| stripe_customer_id | String    | Nullable      |
+| subscription_plan  | Enum      | `FREE`, `PRO` |
+| created_at         | Timestamp |               |
 
 ---
 
-# API Endpoints
+## 2️⃣ Users
+
+| Field         | Type      | Constraints |
+| ------------- | --------- | ----------- |
+| id            | UUID      | Primary Key |
+| email         | String    | Unique      |
+| password_hash | String    | Not Null    |
+| created_at    | Timestamp |             |
+
+---
+
+## 3️⃣ WorkspaceMembers
+
+RBAC pivot table linking users and workspaces.
+
+| Field        | Type                              |
+| ------------ | --------------------------------- |
+| workspace_id | UUID                              |
+| user_id      | UUID                              |
+| role         | Enum (`OWNER`, `ADMIN`, `MEMBER`) |
+
+---
+
+## 4️⃣ Projects
+
+| Field        | Type                         |
+| ------------ | ---------------------------- |
+| id           | UUID                         |
+| workspace_id | UUID                         |
+| name         | String                       |
+| status       | Enum (`ACTIVE`, `COMPLETED`) |
+
+---
+
+## 5️⃣ Tasks
+
+| Field               | Type                                 |
+| ------------------- | ------------------------------------ |
+| id                  | UUID                                 |
+| project_id          | UUID                                 |
+| title               | String                               |
+| assigned_to_user_id | UUID                                 |
+| status              | Enum (`TODO`, `IN_PROGRESS`, `DONE`) |
+| due_date            | Date                                 |
+
+---
+
+## 6️⃣ Invoices
+
+| Field        | Type                     |
+| ------------ | ------------------------ |
+| id           | UUID                     |
+| workspace_id | UUID                     |
+| amount       | Decimal                  |
+| status       | Enum (`PENDING`, `PAID`) |
+
+---
+
+## 7️⃣ Subscriptions
+
+| Field                  | Type   |
+| ---------------------- | ------ |
+| id                     | UUID   |
+| workspace_id           | UUID   |
+| stripe_subscription_id | String |
+| plan                   | Enum   |
+| status                 | Enum   |
+
+---
+
+## 8️⃣ ActivityLogs
+
+Tracks system activity.
+
+| Field        | Type      |
+| ------------ | --------- |
+| id           | UUID      |
+| workspace_id | UUID      |
+| user_id      | UUID      |
+| action       | String    |
+| created_at   | Timestamp |
+
+---
+
+# 🛣 API Endpoints
 
 ## Authentication
 
-| Method | Endpoint | Description |
-|------|------|-------------|
-| POST | `/api/auth/register` | Register tenant |
-| POST | `/api/auth/login` | Login user |
-| GET | `/api/auth/me` | Get logged user |
+| Method | Endpoint             | Description                 |
+| ------ | -------------------- | --------------------------- |
+| POST   | `/api/auth/register` | Register user and workspace |
+| POST   | `/api/auth/login`    | Login user                  |
+| GET    | `/api/auth/me`       | Get authenticated user      |
 
 ---
 
-## Tenant
+## Workspace
 
-| Method | Endpoint | Description |
-|------|------|-------------|
-| POST | `/api/tenants` | Create tenant |
-| GET | `/api/tenants/:id` | Get tenant details |
+| Method | Endpoint              | Description         |
+| ------ | --------------------- | ------------------- |
+| GET    | `/api/workspaces`     | Get user workspaces |
+| POST   | `/api/workspaces`     | Create workspace    |
+| PATCH  | `/api/workspaces/:id` | Update workspace    |
 
 ---
 
 ## Users
 
-| Method | Endpoint | Description |
-|------|------|-------------|
-| GET | `/api/users` | Get tenant users |
-| POST | `/api/users` | Create user |
-| PATCH | `/api/users/:id` | Update user |
+| Method | Endpoint                     |
+| ------ | ---------------------------- |
+| POST   | `/api/workspaces/:id/invite` |
+| GET    | `/api/workspaces/:id/users`  |
+| PATCH  | `/api/users/:id/role`        |
 
 ---
 
-## Products
+## Projects
 
-| Method | Endpoint | Description |
-|------|------|-------------|
-| GET | `/api/products` | Get products |
-| POST | `/api/products` | Create product |
-| PATCH | `/api/products/:id` | Update product |
-| DELETE | `/api/products/:id` | Delete product |
-
----
-
-## Orders
-
-| Method | Endpoint | Description |
-|------|------|-------------|
-| POST | `/api/orders` | Create order |
-| GET | `/api/orders` | Get orders |
-| PATCH | `/api/orders/:id` | Update order status |
+| Method | Endpoint            |
+| ------ | ------------------- |
+| GET    | `/api/projects`     |
+| POST   | `/api/projects`     |
+| GET    | `/api/projects/:id` |
+| PATCH  | `/api/projects/:id` |
+| DELETE | `/api/projects/:id` |
 
 ---
 
-## Customers
+## Tasks
 
-| Method | Endpoint | Description |
-|------|------|-------------|
-| GET | `/api/customers` | Get customers |
-| POST | `/api/customers` | Create customer |
+| Method | Endpoint         |
+| ------ | ---------------- |
+| GET    | `/api/tasks`     |
+| POST   | `/api/tasks`     |
+| PATCH  | `/api/tasks/:id` |
+| DELETE | `/api/tasks/:id` |
 
 ---
 
-# Flow Diagrams
+## Invoices
 
-## Tenant Onboarding
+| Method | Endpoint            |
+| ------ | ------------------- |
+| GET    | `/api/invoices`     |
+| POST   | `/api/invoices`     |
+| PATCH  | `/api/invoices/:id` |
+
+---
+
+## Billing
+
+| Method | Endpoint                 |
+| ------ | ------------------------ |
+| POST   | `/api/billing/subscribe` |
+| POST   | `/api/webhooks/stripe`   |
+
+---
+
+# 🔒 Security Rules
+
+## Golden Rule of Tenant Isolation
+
+All queries must include:
 
 ```
-Register → Create Tenant → Invite Users → Start Managing Business
+WHERE workspace_id = currentWorkspace
 ```
 
----
-
-## Order Workflow
-
-```
-Create Order → Pending → Processing → Completed
-```
+This guarantees that no workspace can access another workspace’s data.
 
 ---
 
-# Multi-Tenant Data Isolation
+## Workspace Context Injection
 
-Each database record contains:
+The backend extracts `workspace_id` from the authenticated user's token.
 
-
-tenantId
-
-
-Every query must filter by:
-
-
-WHERE tenantId = currentTenant
-
-
-This ensures **complete tenant data isolation**.
+Never trust workspace identifiers sent from the client.
 
 ---
 
-# Security Considerations
+## Input Security
 
-- JWT Authentication
-- Role Based Access Control
-- Tenant data isolation
-- API rate limiting
-- Audit logging
-- Input validation
+All inputs must be sanitized to prevent:
 
----
-
-# Future Enhancements
-
-- AI analytics
-- Payment gateway integration
-- Mobile application
-- Plugin ecosystem
-- Advanced automation
-- Multi-language support
+* SQL Injection
+* Cross-Site Scripting (XSS)
+* Invalid payloads
 
 ---
 
-# Conclusion
+# 🚀 Future Enhancements
 
-OpsCore is designed as a **scalable enterprise SaaS platform** that helps businesses manage operations efficiently within a secure multi-tenant environment.
+Potential improvements:
+
+* Advanced analytics dashboard
+* Workflow automation
+* Email notifications
+* Mobile application
+* Plugin ecosystem
+* Webhooks and integrations
+* Multi-language support
+
+---
+
+# 📈 Conclusion
+
+OpsCore is a **scalable multi-tenant SaaS platform** enabling organizations to manage projects, teams, and billing inside secure workspaces.
 
 The architecture prioritizes:
 
-- Scalability
-- Security
-- Modularity
-- Automation
+* Scalability
+* Security
+* Tenant isolation
+* Modular system design
+* Operational efficiency
