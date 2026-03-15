@@ -4,23 +4,45 @@ model Project {
   createdByUserId String
   name            String
   description     String?
+  clientName      String?
   status          ProjectStatus @default(ACTIVE)
   startDate       DateTime?
   endDate         DateTime?
+  archivedAt      DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   deletedAt       DateTime?
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdByUser User      @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdByUser User            @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   tasks         Task[]
+  members       ProjectMember[]
 
   @@unique([id, workspaceId])
   @@index([workspaceId])
   @@index([createdByUserId])
   @@index([workspaceId, status])
   @@index([deletedAt])
+  @@index([archivedAt])
   @@map("projects")
+}
+
+model ProjectMember {
+  id          String   @id @default(uuid())
+  workspaceId String
+  projectId   String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
 }
 
 model Task {
@@ -38,10 +60,12 @@ model Task {
   updatedAt        DateTime     @updatedAt
   deletedAt        DateTime?
 
-  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project        Project   @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
-  assignedToUser User?     @relation("TaskAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  createdByUser  User      @relation("TaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project        Project         @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  assignedToUser User?           @relation("TaskAssignedTo", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  createdByUser  User            @relation("TaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  comments       TaskComment[]
+  attachments    TaskAttachment[]
 
   @@index([workspaceId])
   @@index([projectId])
@@ -52,4 +76,44 @@ model Task {
   @@index([dueDate])
   @@index([deletedAt])
   @@map("tasks")
+}
+
+model TaskComment {
+  id          String   @id @default(uuid())
+  workspaceId String
+  taskId      String
+  userId      String
+  body        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([taskId])
+  @@index([userId])
+  @@map("task_comments")
+}
+
+model TaskAttachment {
+  id           String   @id @default(uuid())
+  workspaceId  String
+  taskId       String
+  uploadedById String
+  fileName     String
+  fileUrl      String
+  mimeType     String?
+  fileSize     Int?
+  createdAt    DateTime @default(now())
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task       Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploadedBy User      @relation("TaskAttachmentUploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([taskId])
+  @@index([uploadedById])
+  @@map("task_attachments")
 }

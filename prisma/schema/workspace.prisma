@@ -1,23 +1,26 @@
 model Workspace {
-  id               String           @id @default(uuid())
+  id               String   @id @default(uuid())
   name             String
-  slug             String           @unique
-  stripeCustomerId String?          @unique
-  subscriptionPlan SubscriptionPlan @default(FREE)
+  slug             String   @unique
+  stripeCustomerId String?  @unique
   createdByUserId  String
-  createdByUser    User             @relation("WorkspaceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdByUser    User     @relation("WorkspaceCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
   deletedAt        DateTime?
 
-  sessions      Session[]
-  members       WorkspaceMember[]
-  invitations   WorkspaceInvitation[]
-  projects      Project[]
-  invoices      Invoice[]
-  subscriptions Subscription[]
-  activityLogs  ActivityLog[]         @relation("ActivityWorkspace")
-  tasks         Task[]
+  sessions        Session[]
+  members         WorkspaceMember[]
+  invitations     WorkspaceInvitation[]
+  projects        Project[]
+  projectMembers  ProjectMember[]
+  invoices        Invoice[]
+  invoiceItems    InvoiceItem[]
+  subscriptions   Subscription[]
+  activityLogs    ActivityLog[]   @relation("ActivityWorkspace")
+  tasks           Task[]
+  taskComments    TaskComment[]
+  taskAttachments TaskAttachment[]
 
   @@index([createdByUserId])
   @@index([deletedAt])
@@ -25,21 +28,24 @@ model Workspace {
 }
 
 model WorkspaceMember {
-  id          String                @id @default(uuid())
-  workspaceId String
-  userId      String
-  role        WorkspaceMemberRole   @default(MEMBER)
-  status      WorkspaceMemberStatus @default(ACTIVE)
-  joinedAt    DateTime?
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  id            String                @id @default(uuid())
+  workspaceId   String
+  userId        String
+  role          WorkspaceMemberRole   @default(MEMBER)
+  status        WorkspaceMemberStatus @default(ACTIVE)
+  joinedAt      DateTime              @default(now())
+  addedByUserId String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedByUser User?     @relation("WorkspaceMemberAddedBy", fields: [addedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([workspaceId, userId])
   @@index([workspaceId])
   @@index([userId])
+  @@index([addedByUserId])
   @@index([workspaceId, role])
   @@index([workspaceId, status])
   @@map("workspace_members")
