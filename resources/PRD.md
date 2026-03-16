@@ -76,8 +76,8 @@ Optional infrastructure:
 
 ## Authentication
 
-* JWT authentication
-* HttpOnly secure cookies
+* Better Auth
+* cookie/session based auth
 
 ## Payments
 
