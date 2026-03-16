@@ -1,5 +1,8 @@
+import { fromNodeHeaders } from "better-auth/node";
 import { Request, Response } from "express";
 import status from "http-status";
+import { envVars } from "../../config/env";
+import { auth } from "../../lib/auth";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
 import { AuthService } from "./auth.service";
@@ -109,6 +112,64 @@ const resendVerification = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const googleLogin = catchAsync(async (req: Request, res: Response) => {
+  const redirectPath = (req.query.redirect as string) || "/dashboard";
+  const encodedRedirectPath = encodeURIComponent(redirectPath);
+
+  const callbackURL = `${envVars.BETTER_AUTH_URL}/api/v1/auth/google/success?redirect=${encodedRedirectPath}`;
+
+  res.render("googleRedirect", {
+    callbackURL,
+    betterAuthUrl: envVars.BETTER_AUTH_URL,
+  });
+});
+
+const googleLoginSuccess = catchAsync(async (req: Request, res: Response) => {
+  const redirectPath = (req.query.redirect as string) || "/dashboard";
+
+  try {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    if (!session) {
+      return res.redirect(`${envVars.FRONTEND_URL}/login?error=no_session_found`);
+    }
+
+    if (!session.user) {
+      return res.redirect(`${envVars.FRONTEND_URL}/login?error=no_user_found`);
+    }
+
+    await AuthService.googleLoginSuccess(session);
+
+    const isValidRedirectPath = redirectPath.startsWith("/") && !redirectPath.startsWith("//");
+
+    const finalRedirectPath = isValidRedirectPath ? redirectPath : "/dashboard";
+
+    res.redirect(`${envVars.FRONTEND_URL}${finalRedirectPath}`);
+  } catch (error: any) {
+    const message = error.message || "oauth_failed";
+    res.redirect(`${envVars.FRONTEND_URL}/login?error=${encodeURIComponent(message)}`);
+  }
+});
+
+const handleOAuthError = catchAsync(async (req: Request, res: Response) => {
+  const error = (req.query.error as string) || "oauth_failed";
+
+  res.redirect(`${envVars.FRONTEND_URL}/login?error=${encodeURIComponent(error)}`);
+});
+
+const switchWorkspace = catchAsync(async (req: Request, res: Response) => {
+  const result = await AuthService.switchWorkspace(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Workspace switched successfully",
+    data: result,
+  });
+});
+
 export const AuthController = {
   register,
   login,
@@ -119,4 +180,8 @@ export const AuthController = {
   changePassword,
   verifyEmail,
   resendVerification,
+  googleLogin,
+  googleLoginSuccess,
+  handleOAuthError,
+  switchWorkspace,
 };

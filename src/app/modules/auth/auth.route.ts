@@ -6,6 +6,12 @@ import { AuthValidation } from "./auth.validation";
 
 const router = Router();
 
+router.get("/login/google", AuthController.googleLogin);
+
+router.get("/google/success", AuthController.googleLoginSuccess);
+
+router.get("/oauth/error", AuthController.handleOAuthError);
+
 router.post("/register", validateRequest(AuthValidation.registerSchema), AuthController.register);
 
 router.post("/login", validateRequest(AuthValidation.loginSchema), AuthController.login);
@@ -43,6 +49,13 @@ router.post(
   "/resend-verification",
   validateRequest(AuthValidation.resendVerificationSchema),
   AuthController.resendVerification
+);
+
+router.patch(
+  "/workspace/switch",
+  requireAuth,
+  validateRequest(AuthValidation.switchWorkspaceSchema),
+  AuthController.switchWorkspace
 );
 
 export const AuthRoutes = router;

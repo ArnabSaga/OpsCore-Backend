@@ -85,6 +85,12 @@ const resendVerificationSchema = z.object({
   }),
 });
 
+const switchWorkspaceSchema = z.object({
+  body: z.object({
+    workspaceId: z.string().uuid("Workspace ID must be a valid UUID"),
+  }),
+});
+
 export const AuthValidation = {
   registerSchema,
   loginSchema,
@@ -93,4 +99,5 @@ export const AuthValidation = {
   changePasswordSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  switchWorkspaceSchema,
 };

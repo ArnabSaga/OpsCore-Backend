@@ -2,7 +2,7 @@ export interface IRegisterPayload {
   name: string;
   email: string;
   password: string;
-  confirmPassword?: string;
+  confirmPassword: string;
   workspaceName: string;
 }
 
@@ -19,13 +19,13 @@ export interface IResetPasswordPayload {
   email: string;
   otp: string;
   newPassword: string;
-  confirmPassword?: string;
+  confirmPassword: string;
 }
 
 export interface IChangePasswordPayload {
   currentPassword: string;
   newPassword: string;
-  confirmPassword?: string;
+  confirmPassword: string;
 }
 
 export interface IVerifyEmailPayload {
@@ -35,6 +35,10 @@ export interface IVerifyEmailPayload {
 
 export interface IResendVerificationPayload {
   email: string;
+}
+
+export interface ISwitchWorkspacePayload {
+  workspaceId: string;
 }
 
 export interface IAuthUser {

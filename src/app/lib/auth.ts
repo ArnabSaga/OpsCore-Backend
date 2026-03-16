@@ -1,9 +1,10 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { prisma } from "./prisma";
+import { emailOTP } from "better-auth/plugins";
 import { SystemRole } from "../../generated/prisma/enums";
-import { emailOTP } from 'better-auth/plugins';
-import { sendEmail } from '../utils/email';
+import { envVars } from "../config/env";
+import { sendEmail } from "../utils/email";
+import { prisma } from "./prisma";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -13,6 +14,21 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
+  },
+
+  socialProviders: {
+    google: {
+      clientId: envVars.GOOGLE_CLIENT_ID,
+      clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+
+      mapProfileToUser: () => ({
+        systemRole: SystemRole.USER,
+        isActive: true,
+        emailVerified: true,
+        isDeleted: false,
+        deletedAt: null,
+      }),
+    },
   },
 
   emailVerification: {
@@ -28,23 +44,20 @@ export const auth = betterAuth({
         required: true,
         default: SystemRole.USER,
       },
-
       isActive: {
         type: "boolean",
         required: true,
         default: true,
       },
-
       isDeleted: {
         type: "boolean",
         required: true,
-        defaultValue: false,
+        default: false,
       },
-
       deletedAt: {
         type: "date",
         required: false,
-        defaultValue: null,
+        default: null,
       },
     },
   },
@@ -52,59 +65,59 @@ export const auth = betterAuth({
   plugins: [
     emailOTP({
       overrideDefaultEmailVerification: true,
+
       async sendVerificationOTP({ email, otp, type }) {
-        if (type === "email-verification") {
+        try {
           const user = await prisma.user.findUnique({
-            where: {
-              email,
-            },
+            where: { email },
           });
 
-          if (!user) {
-            console.error(`User with email - ${email} not found. Cannot send verification OTP.`);
-            return;
-          }
+          if (!user) return;
 
-          if (user && user.systemRole === SystemRole.SUPER_ADMIN) {
-            console.log(
-              `User with email ${email} is a super admin. Skipping sending verification OTP.`
-            );
-            return;
-          }
+          if (user.systemRole === SystemRole.SUPER_ADMIN) return;
 
-          if (user && !user.emailVerified) {
-            sendEmail({
+          if (type === "email-verification" && !user.emailVerified) {
+            await sendEmail({
               to: email,
               subject: "Verify your email with OpsCore",
               templateName: "otp",
               templateData: {
                 name: user.name,
                 otp,
+                expiryMinutes: 3,
+                appName: "OpsCore",
               },
             });
           }
-        } else if (type === "forget-password") {
-          const user = await prisma.user.findUnique({
-            where: {
-              email,
-            },
-          });
 
-          if (user) {
-            sendEmail({
+          if (type === "forget-password") {
+            await sendEmail({
               to: email,
               subject: "Password Reset OTP",
               templateName: "otp",
               templateData: {
                 name: user.name,
                 otp,
+                expiryMinutes: 3,
+                appName: "OpsCore",
               },
             });
           }
+        } catch (error) {
+          console.error("OTP sending error:", error);
         }
       },
-      expiresIn: 3 * 60, // 3 minutes
+
+      expiresIn: 3 * 60,
       otpLength: 6,
     }),
   ],
+
+  redirectURLs: {
+    signIn: `${envVars.BETTER_AUTH_URL}/api/v1/auth/google/success`,
+  },
+
+  advanced: {
+    useSecureCookies: envVars.NODE_ENV === "production",
+  },
 });

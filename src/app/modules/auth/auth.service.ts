@@ -16,6 +16,7 @@ import {
   IRegisterServiceResponse,
   IResendVerificationPayload,
   IResetPasswordPayload,
+  ISwitchWorkspacePayload,
   IVerifyEmailPayload,
 } from "./auth.interface";
 
@@ -53,6 +54,7 @@ const register = async (req: Request): Promise<IRegisterServiceResponse> => {
         password,
         systemRole: "USER",
         isActive: true,
+        isDeleted: false,
       },
       headers: fromNodeHeaders(req.headers),
       asResponse: true,
@@ -402,6 +404,104 @@ const resendVerification = async (req: Request): Promise<void> => {
   }
 };
 
+const googleLoginSuccess = async (session: Record<string, any>) => {
+  const userId = session.user.id;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, isActive: true, isDeleted: true },
+  });
+
+  if (!user) {
+    throw new AppError(status.NOT_FOUND, "User not found after OAuth");
+  }
+
+  if (user.isDeleted) {
+    throw new AppError(status.FORBIDDEN, "User account is deleted");
+  }
+
+  if (!user.isActive) {
+    throw new AppError(status.FORBIDDEN, "User account is inactive");
+  }
+
+  const existingMembership = await prisma.workspaceMember.findFirst({
+    where: { userId },
+  });
+
+  if (!existingMembership) {
+    const workspaceName = `${user.name}'s Workspace`;
+    const slug = await generateUniqueWorkspaceSlug(workspaceName);
+
+    await prisma.$transaction(async (tx) => {
+      const workspace = await tx.workspace.create({
+        data: { name: workspaceName, slug, createdByUserId: userId },
+      });
+
+      await tx.workspaceMember.create({
+        data: {
+          workspaceId: workspace.id,
+          userId,
+          role: "OWNER",
+          status: "ACTIVE",
+          addedByUserId: userId,
+        },
+      });
+    });
+  }
+};
+
+const switchWorkspace = async (req: Request): Promise<{ workspaceId: string; workspaceName: string; role: string }> => {
+  try {
+    const { workspaceId } = req.body as ISwitchWorkspacePayload;
+
+    const sessionData = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    if (!sessionData?.session) {
+      throw new AppError(status.UNAUTHORIZED, "Session not found");
+    }
+
+    // Validate the user is an ACTIVE member of the target workspace
+    const membership = await prisma.workspaceMember.findFirst({
+      where: {
+        userId: req.user!.id,
+        workspaceId,
+        status: "ACTIVE",
+      },
+      select: {
+        role: true,
+        workspace: {
+          select: { id: true, name: true, deletedAt: true },
+        },
+      },
+    });
+
+    if (!membership) {
+      throw new AppError(status.FORBIDDEN, "You are not an active member of this workspace");
+    }
+
+    if (membership.workspace.deletedAt) {
+      throw new AppError(status.NOT_FOUND, "Workspace no longer exists");
+    }
+
+    // Update the session's active workspace
+    await prisma.session.update({
+      where: { id: sessionData.session.id },
+      data: { activeWorkspaceId: workspaceId },
+    });
+
+    return {
+      workspaceId: membership.workspace.id,
+      workspaceName: membership.workspace.name,
+      role: String(membership.role),
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to switch workspace");
+  }
+};
+
 export const AuthService = {
   register,
   login,
@@ -412,4 +512,6 @@ export const AuthService = {
   changePassword,
   verifyEmail,
   resendVerification,
+  googleLoginSuccess,
+  switchWorkspace,
 };
