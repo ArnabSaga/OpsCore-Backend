@@ -15,7 +15,7 @@ const moduleRoutes: TModuleRoutes[] = [
   { path: "/auth", route: AuthRoutes },
   // { path: "/account", route: UserRoutes },
   { path: "/workspaces", route: WorkspaceRoutes },
-  // { path: "/", route: InvitationRoutes },
+  { path: "/invitations", route: InvitationRoutes },
 ];
 
 moduleRoutes.forEach((route) => router.use(route.path, route.route));
