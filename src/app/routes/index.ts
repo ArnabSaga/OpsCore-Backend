@@ -13,7 +13,7 @@ const router = Router();
 
 const moduleRoutes: TModuleRoutes[] = [
   { path: "/auth", route: AuthRoutes },
-  // { path: "/account", route: UserRoutes },
+  { path: "/account", route: UserRoutes },
   { path: "/workspaces", route: WorkspaceRoutes },
   { path: "/invitations", route: InvitationRoutes },
 ];
