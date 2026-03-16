@@ -16,7 +16,8 @@ export interface IForgotPasswordPayload {
 }
 
 export interface IResetPasswordPayload {
-  token: string;
+  email: string;
+  otp: string;
   newPassword: string;
   confirmPassword?: string;
 }
@@ -28,7 +29,8 @@ export interface IChangePasswordPayload {
 }
 
 export interface IVerifyEmailPayload {
-  token: string;
+  email: string;
+  otp: string;
 }
 
 export interface IResendVerificationPayload {

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+        <%= locals.subject || "Your OpsCore OTP Code" %>
+    </title>
+
+    <style>
+        /* --- Base Styles --- */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0c111d;
+            font-family: Inter, Arial, Helvetica, sans-serif;
+            color: #ffffff;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        table {
+            border-collapse: collapse;
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+        /* --- Utility Classes --- */
+        .preheader {
+            display: none;
+            max-height: 0px;
+            overflow: hidden;
+            opacity: 0;
+            font-size: 0px;
+            line-height: 0px;
+            color: #0c111d;
+        }
+
+        .bg-table {
+            background-color: #0c111d;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+        }
+
+        .wrapper-td {
+            padding: 40px 16px;
+            text-align: center;
+        }
+
+        .main-container {
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .pad-b-12 {
+            padding-bottom: 12px;
+        }
+
+        .pad-b-20 {
+            padding-bottom: 20px;
+        }
+
+        .pad-b-28 {
+            padding-bottom: 28px;
+        }
+
+        /* --- Brand Elements --- */
+        .brand-glow {
+            width: 120px;
+            height: 8px;
+            border-radius: 999px;
+            background-color: #7f56d9;
+            /* Solid Fallback */
+            background: linear-gradient(90deg, #7f56d9 0%, #6941c6 100%);
+            box-shadow: 0 0 18px rgba(127, 86, 217, 0.45);
+            display: inline-block;
+        }
+
+        .brand-badge {
+            display: inline-block;
+            padding: 12px 18px;
+            border-radius: 14px;
+            background-color: #27223e;
+            /* Solid Fallback */
+            background: rgba(127, 86, 217, 0.12);
+            border: 1px solid #3d305e;
+            /* Solid Fallback */
+            border: 1px solid rgba(127, 86, 217, 0.25);
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .brand-highlight {
+            color: #7f56d9;
+        }
+
+        /* --- Cards & Containers --- */
+        .card {
+            background-color: #1d2939;
+            border: 1px solid #2d3748;
+            /* Solid Fallback */
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 40px 32px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+        }
+
+        .info-card {
+            background-color: #212c3f;
+            /* Solid Fallback */
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid #2d3748;
+            /* Solid Fallback */
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            margin-bottom: 24px;
+        }
+
+        .info-card-td {
+            padding: 18px 20px;
+            text-align: left;
+        }
+
+        /* --- Typography --- */
+        .heading {
+            margin: 0;
+            font-size: 30px;
+            line-height: 1.25;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .subheading {
+            margin: 0 auto;
+            font-size: 16px;
+            line-height: 1.6;
+            color: #94a3b8;
+            max-width: 460px;
+        }
+
+        .greeting-text {
+            margin: 0 auto 8px auto;
+            font-size: 16px;
+            line-height: 1.6;
+            color: #ffffff;
+            font-weight: 500;
+        }
+
+        .info-title {
+            margin: 0 0 10px 0;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .info-text {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #94a3b8;
+        }
+
+        .info-text-last {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #94a3b8;
+        }
+
+        .success-text {
+            color: #12b76a;
+            font-weight: 600;
+        }
+
+        /* --- OTP Box --- */
+        .otp-container {
+            display: inline-block;
+            padding: 18px 28px;
+            border-radius: 16px;
+            background-color: #26243d;
+            /* Solid Fallback */
+            background: linear-gradient(135deg, rgba(127, 86, 217, 0.18) 0%, rgba(105, 65, 198, 0.12) 100%);
+            border: 1px solid #3d305e;
+            /* Solid Fallback */
+            border: 1px solid rgba(127, 86, 217, 0.28);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 24px rgba(127, 86, 217, 0.18);
+        }
+
+        .otp-label {
+            font-size: 13px;
+            line-height: 1;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+
+        .otp-code {
+            font-size: 36px;
+            line-height: 1.2;
+            font-weight: 700;
+            letter-spacing: 10px;
+            color: #ffffff;
+        }
+
+        /* --- Button & Divider --- */
+        .cta-button {
+            display: inline-block;
+            padding: 14px 24px;
+            border-radius: 12px;
+            background-color: #7f56d9;
+            /* Solid Fallback */
+            background: linear-gradient(135deg, #7f56d9 0%, #6941c6 100%);
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(127, 86, 217, 0.3);
+        }
+
+        .divider {
+            height: 1px;
+            background-color: #2d3748;
+            /* Solid Fallback */
+            background-color: rgba(255, 255, 255, 0.08);
+            width: 100%;
+            line-height: 1px;
+            font-size: 1px;
+        }
+
+        /* --- Footer --- */
+        .footer-text {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #667085;
+        }
+
+        .footer-text-last {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #667085;
+        }
+
+        .support-link {
+            color: #7f56d9;
+            font-weight: 600;
+        }
+
+        .bottom-footer {
+            padding: 20px 12px 0;
+        }
+
+        .copyright {
+            margin: 0;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #667085;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="preheader">
+        Your OpsCore verification code is <%= locals.otp %>. This code expires in <%= locals.expiryMinutes || 3 %>
+                minutes.
+                &zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+    </div>
+
+    <table role="presentation" border="0" class="bg-table">
+        <tr>
+            <td class="wrapper-td">
+
+                <table role="presentation" border="0" class="main-container">
+                    <tr>
+                        <td class="text-center pad-b-20">
+                            <div class="brand-glow"></div>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td class="card">
+                            <table role="presentation" border="0" width="100%">
+                                <tr>
+                                    <td class="text-center pad-b-28">
+                                        <div class="brand-badge">
+                                            <span class="brand-highlight">Ops</span>Core
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" border="0" width="100%">
+                                <tr>
+                                    <td class="text-center pad-b-12">
+                                        <h1 class="heading">Verify Your Identity</h1>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="text-center pad-b-28">
+                                        <% if (locals.name) { %>
+                                            <p class="greeting-text">Hi <%= locals.name %>,</p>
+                                            <% } %>
+                                                <p class="subheading">
+                                                    Use the one-time password below to continue securely in your OpsCore
+                                                    account.
+                                                </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" border="0" width="100%">
+                                <tr>
+                                    <td class="text-center pad-b-28">
+                                        <div class="otp-container">
+                                            <div class="otp-label">Your OTP Code</div>
+                                            <div class="otp-code">
+                                                <%= locals.otp %>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" border="0" width="100%" class="info-card">
+                                <tr>
+                                    <td class="info-card-td">
+                                        <p class="info-title">Security details</p>
+                                        <p class="info-text">
+                                            This code will expire in
+                                            <span class="success-text">
+                                                <%= locals.expiryMinutes || 3 %> minutes
+                                            </span>.
+                                        </p>
+                                        <p class="info-text-last">
+                                            Do not share this code with anyone. OpsCore will never ask for your OTP by
+                                            phone, email, or message.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <% if (locals.actionUrl) { %>
+                                <table role="presentation" border="0" width="100%">
+                                    <tr>
+                                        <td class="text-center pad-b-28">
+                                            <a href="<%= locals.actionUrl %>" class="cta-button">
+                                                Continue to OpsCore
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </table>
+                                <% } %>
+
+                                    <table role="presentation" border="0" width="100%">
+                                        <tr>
+                                            <td class="pad-b-20">
+                                                <div class="divider"></div>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <table role="presentation" border="0" width="100%">
+                                        <tr>
+                                            <td class="text-center">
+                                                <p class="footer-text">
+                                                    If you didn’t request this code, you can safely ignore this email.
+                                                </p>
+                                                <% if (locals.supportEmail) { %>
+                                                    <p class="footer-text-last">
+                                                        Need help?
+                                                        <a href="mailto:<%= locals.supportEmail %>"
+                                                            class="support-link">
+                                                            <%= locals.supportEmail %>
+                                                        </a>
+                                                    </p>
+                                                    <% } %>
+                                            </td>
+                                        </tr>
+                                    </table>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td class="text-center bottom-footer">
+                            <p class="copyright">
+                                © <%= locals.year || new Date().getFullYear() %>
+                                    <%= locals.appName || "OpsCore" %>. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+            </td>
+        </tr>
+    </table>
+</body>
+
+</html>

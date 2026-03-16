@@ -11,10 +11,24 @@ const validateRequest =
       });
 
       req.body = parsed.body ?? req.body;
-      // req.query is a read-only getter on IncomingMessage — mutate in place instead of reassigning
-      if (parsed.query) Object.assign(req.query, parsed.query);
-      // req.params can be mutated safely via Object.assign
-      if (parsed.params) Object.assign(req.params, parsed.params);
+      
+      if (parsed.query) {
+        Object.defineProperty(req, "query", {
+          value: parsed.query,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
+
+      if (parsed.params) {
+        Object.defineProperty(req, "params", {
+          value: parsed.params,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
 
       next();
     } catch (error) {

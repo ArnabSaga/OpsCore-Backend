@@ -48,7 +48,8 @@ const forgotPasswordSchema = z.object({
 const resetPasswordSchema = z.object({
   body: z
     .object({
-      token: z.string().min(1, "Token is required"),
+      email: z.string().trim().toLowerCase().email("Invalid email address"),
+      otp: z.string().trim().min(1, "OTP is required").length(6, "OTP must be 6 digits"),
       newPassword: passwordSchema,
       confirmPassword: z.string(),
     })
@@ -73,7 +74,8 @@ const changePasswordSchema = z.object({
 
 const verifyEmailSchema = z.object({
   body: z.object({
-    token: z.string().min(1, "Verification token is required"),
+    email: z.string().trim().toLowerCase().email("Invalid email address"),
+    otp: z.string().trim().min(1, "OTP is required").length(6, "OTP must be 6 digits"),
   }),
 });
 

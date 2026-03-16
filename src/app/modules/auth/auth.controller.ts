@@ -65,7 +65,7 @@ const forgotPassword = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     statusCode: status.OK,
     success: true,
-    message: "Password reset link sent to your email",
+    message: "Password reset OTP sent to your email",
   });
 });
 
@@ -105,7 +105,7 @@ const resendVerification = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     statusCode: status.OK,
     success: true,
-    message: "Verification email resent successfully",
+    message: "Verification OTP resent successfully",
   });
 });
 

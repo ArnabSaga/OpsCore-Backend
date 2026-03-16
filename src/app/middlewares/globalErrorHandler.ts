@@ -15,7 +15,13 @@ import { TErrorSources } from "../interfaces/error.interface";
 
 const globalErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (envVars.NODE_ENV === "development") {
-    console.error(err);
+    if (err instanceof ZodError) {
+      console.error(`[Zod Validation Error]:`, err.issues);
+    } else if (err instanceof SyntaxError && "body" in err) {
+      console.error("[Syntax Error in Request Body]:", err.message);
+    } else {
+      console.error(err);
+    }
   }
 
   let statusCode: number = status.INTERNAL_SERVER_ERROR;
