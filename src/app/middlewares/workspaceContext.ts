@@ -4,6 +4,7 @@ import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 import AppError from "../errors/AppError";
+import { WorkspaceMemberStatus } from "../../generated/prisma/enums";
 
 export const workspaceContext = async (req: Request, _res: Response, next: NextFunction) => {
   try {
@@ -38,7 +39,10 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
       throw new AppError(status.UNAUTHORIZED, "Session not found in database");
     }
 
-    if (!dbSession.activeWorkspaceId) {
+    const requestedWorkspaceId = req.params.workspaceId as string | undefined;
+    const resolvedWorkspaceId = requestedWorkspaceId ?? dbSession.activeWorkspaceId;
+
+    if (!resolvedWorkspaceId) {
       throw new AppError(
         status.BAD_REQUEST,
         "No active workspace selected. Please switch to a workspace first"
@@ -48,7 +52,7 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
     const membership = await prisma.workspaceMember.findFirst({
       where: {
         userId: req.user.id,
-        workspaceId: dbSession.activeWorkspaceId,
+        workspaceId: resolvedWorkspaceId,
       },
       select: {
         id: true,
@@ -59,6 +63,7 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
         workspace: {
           select: {
             id: true,
+            name: true,
             deletedAt: true,
           },
         },
@@ -66,25 +71,32 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
     });
 
     if (!membership) {
-      throw new AppError(status.FORBIDDEN, "You do not belong to the active workspace");
+      throw new AppError(status.FORBIDDEN, "You do not belong to this workspace");
     }
 
     if (membership.workspace.deletedAt) {
       throw new AppError(status.NOT_FOUND, "Workspace no longer exists");
     }
 
-    if (String(membership.status) !== "ACTIVE") {
+    if (membership.status !== WorkspaceMemberStatus.ACTIVE) {
       throw new AppError(status.FORBIDDEN, "Your workspace membership is not active");
     }
 
+    if (requestedWorkspaceId && dbSession.activeWorkspaceId !== requestedWorkspaceId) {
+      await prisma.session.update({
+        where: { id: dbSession.id },
+        data: { activeWorkspaceId: requestedWorkspaceId },
+      });
+    }
+
     req.workspaceId = membership.workspaceId;
-    req.workspaceRole = String(membership.role);
+    req.workspaceRole = membership.role;
     req.workspaceMembership = {
       id: membership.id,
       workspaceId: membership.workspaceId,
       userId: membership.userId,
-      role: String(membership.role),
-      status: String(membership.status),
+      role: membership.role,
+      status: membership.status,
     };
 
     next();

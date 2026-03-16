@@ -1,5 +1,8 @@
 import { Router } from "express";
 import { AuthRoutes } from "../modules/auth/auth.route";
+import { UserRoutes } from '../modules/user/user.route';
+import { WorkspaceRoutes } from '../modules/workspace/workspace.route';
+import { InvitationRoutes } from '../modules/invitation/invitation.route';
 
 type TModuleRoutes = {
   path: string;
@@ -10,7 +13,9 @@ const router = Router();
 
 const moduleRoutes: TModuleRoutes[] = [
   { path: "/auth", route: AuthRoutes },
-
+  // { path: "/account", route: UserRoutes },
+  { path: "/workspaces", route: WorkspaceRoutes },
+  // { path: "/", route: InvitationRoutes },
 ];
 
 moduleRoutes.forEach((route) => router.use(route.path, route.route));
