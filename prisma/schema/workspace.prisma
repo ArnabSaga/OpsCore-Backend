@@ -9,6 +9,13 @@ model Workspace {
   updatedAt        DateTime @updatedAt
   deletedAt        DateTime?
 
+  trialStartsAt          DateTime?
+  trialEndsAt            DateTime?
+  planOverride           SubscriptionPlan?
+  planOverrideExpiresAt  DateTime?
+  billingCycleStartsAt   DateTime?
+  billingCycleEndsAt     DateTime?
+
   sessions        Session[]
   members         WorkspaceMember[]
   invitations     WorkspaceInvitation[]
