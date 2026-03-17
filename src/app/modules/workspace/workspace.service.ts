@@ -1,23 +1,21 @@
+import { fromNodeHeaders } from "better-auth/node";
 import { Request } from "express";
 import status from "http-status";
-import { fromNodeHeaders } from "better-auth/node";
-import AppError from "../../errors/AppError";
 import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../../generated/prisma/enums";
-import { prisma } from "../../lib/prisma";
+import { DEFAULT_WORKSPACE_PLAN, PLAN_FEATURES } from "../../config/planFeatures";
+import AppError from "../../errors/AppError";
 import { auth } from "../../lib/auth";
-import { generateSlug } from "../../utils/generateSlug";
+import { prisma } from "../../lib/prisma";
 import {
   assertUserCanCreateWorkspace,
   resolveWorkspacePlanContext,
 } from "../../utils/checkPlanLimit";
-import { DEFAULT_WORKSPACE_PLAN, PLAN_FEATURES } from "../../config/planFeatures";
+import { generateSlug } from "../../utils/generateSlug";
 import {
   ICreateWorkspacePayload,
   IMyWorkspaceResponse,
   ISwitchWorkspaceResponse,
-  IUpdateMemberPayload,
   IUpdateWorkspacePayload,
-  IWorkspaceMemberResponse,
   IWorkspaceResponse,
 } from "./workspace.interface";
 
@@ -398,137 +396,6 @@ const deleteWorkspace = async (req: Request): Promise<void> => {
   }
 };
 
-const getMembers = async (req: Request): Promise<IWorkspaceMemberResponse[]> => {
-  try {
-    const workspaceId = req.params.workspaceId as string;
-
-    const members = await prisma.workspaceMember.findMany({
-      where: { workspaceId },
-      select: {
-        id: true,
-        role: true,
-        status: true,
-        joinedAt: true,
-        user: {
-          select: { id: true, name: true, email: true, image: true },
-        },
-      },
-      orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
-    });
-
-    return members;
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch members");
-  }
-};
-
-const updateMember = async (req: Request): Promise<IWorkspaceMemberResponse> => {
-  try {
-    const workspaceId = req.params.workspaceId as string;
-    const memberId = req.params.memberId as string;
-    const { role, status: memberStatus } = req.body as IUpdateMemberPayload;
-
-    const existingMember = await prisma.workspaceMember.findFirst({
-      where: { id: memberId, workspaceId },
-      select: {
-        id: true,
-        userId: true,
-        role: true,
-        status: true,
-      },
-    });
-
-    if (!existingMember) {
-      throw new AppError(status.NOT_FOUND, "Member not found in this workspace");
-    }
-
-    if (
-      existingMember.role === WorkspaceMemberRole.OWNER &&
-      ((role && role !== WorkspaceMemberRole.OWNER) ||
-        memberStatus === WorkspaceMemberStatus.INACTIVE)
-    ) {
-      const ownerCount = await prisma.workspaceMember.count({
-        where: {
-          workspaceId,
-          role: WorkspaceMemberRole.OWNER,
-          status: WorkspaceMemberStatus.ACTIVE,
-        },
-      });
-
-      if (ownerCount <= 1) {
-        throw new AppError(status.BAD_REQUEST, "Cannot demote or deactivate the only active owner");
-      }
-    }
-
-    const updated = await prisma.workspaceMember.update({
-      where: { id: memberId },
-      data: {
-        ...(role !== undefined && { role }),
-        ...(memberStatus !== undefined && { status: memberStatus }),
-      },
-      select: {
-        id: true,
-        role: true,
-        status: true,
-        joinedAt: true,
-        user: {
-          select: { id: true, name: true, email: true, image: true },
-        },
-      },
-    });
-
-    return updated;
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update member");
-  }
-};
-
-const removeMember = async (req: Request): Promise<void> => {
-  try {
-    const workspaceId = req.params.workspaceId as string;
-    const memberId = req.params.memberId as string;
-    const requestingUserId = req.user!.id;
-
-    const existingMember = await prisma.workspaceMember.findFirst({
-      where: { id: memberId, workspaceId },
-      select: {
-        id: true,
-        userId: true,
-        role: true,
-      },
-    });
-
-    if (!existingMember) {
-      throw new AppError(status.NOT_FOUND, "Member not found in this workspace");
-    }
-
-    if (existingMember.role === WorkspaceMemberRole.OWNER) {
-      const ownerCount = await prisma.workspaceMember.count({
-        where: {
-          workspaceId,
-          role: WorkspaceMemberRole.OWNER,
-          status: WorkspaceMemberStatus.ACTIVE,
-        },
-      });
-
-      if (ownerCount <= 1) {
-        throw new AppError(status.BAD_REQUEST, "Cannot remove the only owner of a workspace");
-      }
-    }
-
-    if (existingMember.userId === requestingUserId) {
-      throw new AppError(status.BAD_REQUEST, "Cannot remove yourself from a workspace");
-    }
-
-    await prisma.workspaceMember.delete({ where: { id: memberId } });
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to remove member");
-  }
-};
-
 export const WorkspaceService = {
   getMyWorkspaces,
   createWorkspace,
@@ -536,7 +403,4 @@ export const WorkspaceService = {
   updateWorkspace,
   switchWorkspace,
   deleteWorkspace,
-  getMembers,
-  updateMember,
-  removeMember,
 };

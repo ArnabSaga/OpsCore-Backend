@@ -69,38 +69,6 @@ const deleteWorkspace = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const getMembers = catchAsync(async (req: Request, res: Response) => {
-  const result = await WorkspaceService.getMembers(req);
-
-  sendResponse(res, {
-    statusCode: status.OK,
-    success: true,
-    message: "Members fetched successfully",
-    data: result,
-  });
-});
-
-const updateMember = catchAsync(async (req: Request, res: Response) => {
-  const result = await WorkspaceService.updateMember(req);
-
-  sendResponse(res, {
-    statusCode: status.OK,
-    success: true,
-    message: "Member updated successfully",
-    data: result,
-  });
-});
-
-const removeMember = catchAsync(async (req: Request, res: Response) => {
-  await WorkspaceService.removeMember(req);
-
-  sendResponse(res, {
-    statusCode: status.OK,
-    success: true,
-    message: "Member removed successfully",
-  });
-});
-
 export const WorkspaceController = {
   getMyWorkspaces,
   createWorkspace,
@@ -108,7 +76,4 @@ export const WorkspaceController = {
   updateWorkspace,
   switchWorkspace,
   deleteWorkspace,
-  getMembers,
-  updateMember,
-  removeMember,
 };

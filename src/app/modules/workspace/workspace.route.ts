@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { WorkspaceMemberRole } from "../../../generated/prisma/enums";
 import { requireAuth } from "../../middlewares/requireAuth";
-import { requireFeature } from "../../middlewares/requireFeature";
 import { requireRole } from "../../middlewares/requireRole";
 import validateRequest from "../../middlewares/validateRequest";
 import { workspaceContext } from "../../middlewares/workspaceContext";
@@ -49,33 +48,6 @@ router.delete(
   workspaceContext,
   requireRole(WorkspaceMemberRole.OWNER),
   WorkspaceController.deleteWorkspace
-);
-
-router.get(
-  "/:workspaceId/members",
-  validateRequest(WorkspaceValidation.workspaceIdParamSchema),
-  workspaceContext,
-  requireFeature("workspace.memberManagement"),
-  WorkspaceController.getMembers
-);
-
-router.patch(
-  "/:workspaceId/members/:memberId",
-  validateRequest(WorkspaceValidation.memberRouteParamSchema),
-  workspaceContext,
-  requireFeature("workspace.advancedPermissions"),
-  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
-  validateRequest(WorkspaceValidation.updateMemberSchema),
-  WorkspaceController.updateMember
-);
-
-router.delete(
-  "/:workspaceId/members/:memberId",
-  validateRequest(WorkspaceValidation.memberRouteParamSchema),
-  workspaceContext,
-  requireFeature("workspace.advancedPermissions"),
-  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
-  WorkspaceController.removeMember
 );
 
 export const WorkspaceRoutes = router;
