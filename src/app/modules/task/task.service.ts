@@ -212,42 +212,61 @@ const getTasks = async (
       deletedAt: null,
     };
 
+    const andConditions: Record<string, unknown>[] = [];
+
     if (query.searchTerm) {
-      where.OR = [
-        { title: { contains: query.searchTerm, mode: "insensitive" } },
-        { description: { contains: query.searchTerm, mode: "insensitive" } },
-      ];
+      andConditions.push({
+        OR: [
+          { title: { contains: query.searchTerm, mode: "insensitive" } },
+          { description: { contains: query.searchTerm, mode: "insensitive" } },
+        ],
+      });
     }
 
     if (query.projectId) {
       await getProjectOrThrow(query.projectId, workspaceId);
-      where.projectId = query.projectId;
+      andConditions.push({ projectId: query.projectId });
     }
 
     if (query.assignedToUserId) {
-      where.assignedToUserId = query.assignedToUserId;
+      andConditions.push({ assignedToUserId: query.assignedToUserId });
     }
 
     if (query.assignedToMe === "true") {
-      where.assignedToUserId = req.user!.id;
+      andConditions.push({ assignedToUserId: req.user!.id });
     }
 
     if (query.status) {
-      where.status = query.status;
+      andConditions.push({ status: query.status });
     }
 
     if (query.priority) {
-      where.priority = query.priority;
+      andConditions.push({ priority: query.priority });
     }
 
     if (query.overdue === "true") {
-      where.dueDate = { lt: new Date() };
-      where.status = { not: "DONE" };
-    } else if (query.dueFrom || query.dueTo) {
-      where.dueDate = {
-        ...(query.dueFrom ? { gte: new Date(query.dueFrom) } : {}),
-        ...(query.dueTo ? { lte: new Date(query.dueTo) } : {}),
-      };
+      andConditions.push({
+        dueDate: { lt: new Date() },
+      });
+
+      if (!query.status) {
+        andConditions.push({
+          status: { not: "DONE" },
+        });
+      }
+    }
+
+    if (query.dueFrom || query.dueTo) {
+      andConditions.push({
+        dueDate: {
+          ...(query.dueFrom ? { gte: new Date(query.dueFrom) } : {}),
+          ...(query.dueTo ? { lte: new Date(query.dueTo) } : {}),
+        },
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     const [tasks, total] = await Promise.all([
@@ -398,11 +417,15 @@ const updateTask = async (req: Request): Promise<ITaskResponse> => {
 
     assertTaskUpdatePermission(req, payload, existingTask);
 
+    if (existingTask.project.archivedAt || existingTask.project.status === "ARCHIVED") {
+      throw new AppError(status.BAD_REQUEST, "Tasks under an archived project cannot be updated");
+    }
+
     if (payload.projectId) {
       await assertProjectUsableForWrites(payload.projectId, workspaceId);
     }
 
-    if (payload.assignedToUserId) {
+    if (payload.assignedToUserId !== undefined && payload.assignedToUserId !== null) {
       await assertAssignableUser(payload.assignedToUserId, workspaceId);
     }
 

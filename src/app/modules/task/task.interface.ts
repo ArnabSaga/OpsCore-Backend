@@ -1,4 +1,4 @@
-import { TaskPriority, TaskStatus } from "../../../generated/prisma/enums";
+import { ProjectStatus, TaskPriority, TaskStatus } from "../../../generated/prisma/enums";
 
 export interface ICreateTaskPayload {
   projectId: string;
@@ -52,7 +52,7 @@ export interface ITaskListItem {
   project: {
     id: string;
     name: string;
-    status: string;
+    status: ProjectStatus;
   };
   assignedToUser: {
     id: string;
@@ -88,7 +88,7 @@ export interface ITaskResponse {
   project: {
     id: string;
     name: string;
-    status: string;
+    status: ProjectStatus;
     archivedAt: Date | null;
   };
   assignedToUser: {
