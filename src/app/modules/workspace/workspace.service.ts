@@ -7,6 +7,11 @@ import { prisma } from "../../lib/prisma";
 import { auth } from "../../lib/auth";
 import { generateSlug } from "../../utils/generateSlug";
 import {
+  assertUserCanCreateWorkspace,
+  resolveWorkspacePlanContext,
+} from "../../utils/checkPlanLimit";
+import { DEFAULT_WORKSPACE_PLAN, PLAN_FEATURES } from "../../config/planFeatures";
+import {
   ICreateWorkspacePayload,
   IMyWorkspaceResponse,
   ISwitchWorkspaceResponse,
@@ -15,6 +20,18 @@ import {
   IWorkspaceMemberResponse,
   IWorkspaceResponse,
 } from "./workspace.interface";
+
+const addDays = (date: Date, days: number) => {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+};
+
+const getMonthRange = (referenceDate = new Date()) => {
+  const start = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+  const end = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1);
+  return { start, end };
+};
 
 const generateUniqueWorkspaceSlug = async (
   workspaceName: string,
@@ -80,11 +97,39 @@ const getMyWorkspaces = async (req: Request): Promise<IMyWorkspaceResponse[]> =>
       orderBy: { workspace: { createdAt: "asc" } },
     });
 
+    const workspaceIds = memberships.map((membership) => membership.workspace.id);
+
+    const planMetaMap = new Map<
+      string,
+      {
+        basePlan: "FREE" | "PRO" | "ENTERPRISE";
+        effectivePlan: "FREE" | "PRO" | "ENTERPRISE";
+        isTrialActive: boolean;
+        trialStartsAt: Date | null;
+        trialEndsAt: Date | null;
+      }
+    >();
+
+    await Promise.all(
+      workspaceIds.map(async (workspaceId) => {
+        const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+        planMetaMap.set(workspaceId, {
+          basePlan: planContext.basePlan,
+          effectivePlan: planContext.effectivePlan,
+          isTrialActive: planContext.isTrialActive,
+          trialStartsAt: planContext.trialStartedAt,
+          trialEndsAt: planContext.trialEndsAt,
+        });
+      })
+    );
+
     return memberships.map((membership) => ({
       ...membership.workspace,
       role: membership.role,
       status: membership.status,
       isActiveWorkspace: membership.workspace.id === activeWorkspaceId,
+      planMeta: planMetaMap.get(membership.workspace.id),
     }));
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -96,11 +141,38 @@ const createWorkspace = async (req: Request): Promise<IWorkspaceResponse> => {
   try {
     const userId = req.user!.id;
     const { name } = req.body as ICreateWorkspacePayload;
+
+    await assertUserCanCreateWorkspace(userId);
+
     const slug = await generateUniqueWorkspaceSlug(name);
+
+    const now = new Date();
+    const billingCycle = getMonthRange(now);
+    const freePlanTrialPolicy = PLAN_FEATURES[DEFAULT_WORKSPACE_PLAN].trial;
+
+    const trialStartsAt = freePlanTrialPolicy.enabled ? now : null;
+    const trialEndsAt =
+      freePlanTrialPolicy.enabled && freePlanTrialPolicy.durationDays > 0
+        ? addDays(now, freePlanTrialPolicy.durationDays)
+        : null;
+
+    const sessionData = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    const sessionId = sessionData?.session?.id ?? null;
 
     const workspace = await prisma.$transaction(async (tx) => {
       const created = await tx.workspace.create({
-        data: { name, slug, createdByUserId: userId },
+        data: {
+          name,
+          slug,
+          createdByUserId: userId,
+          trialStartsAt,
+          trialEndsAt,
+          billingCycleStartsAt: billingCycle.start,
+          billingCycleEndsAt: billingCycle.end,
+        },
         select: {
           id: true,
           name: true,
@@ -122,10 +194,28 @@ const createWorkspace = async (req: Request): Promise<IWorkspaceResponse> => {
         },
       });
 
+      if (sessionId) {
+        await tx.session.update({
+          where: { id: sessionId },
+          data: { activeWorkspaceId: created.id },
+        });
+      }
+
       return created;
     });
 
-    return workspace;
+    const planContext = await resolveWorkspacePlanContext(workspace.id);
+
+    return {
+      ...workspace,
+      planMeta: {
+        basePlan: planContext.basePlan,
+        effectivePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create workspace");
@@ -153,7 +243,18 @@ const getWorkspace = async (req: Request): Promise<IWorkspaceResponse> => {
       throw new AppError(status.NOT_FOUND, "Workspace not found");
     }
 
-    return workspace;
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      ...workspace,
+      planMeta: {
+        basePlan: planContext.basePlan,
+        effectivePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch workspace");
@@ -195,7 +296,18 @@ const updateWorkspace = async (req: Request): Promise<IWorkspaceResponse> => {
       },
     });
 
-    return updated;
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      ...updated,
+      planMeta: {
+        basePlan: planContext.basePlan,
+        effectivePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update workspace");

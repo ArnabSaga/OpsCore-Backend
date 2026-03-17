@@ -274,6 +274,20 @@ export const PLAN_FEATURES: Record<WorkspacePlan, PlanPolicy> = {
 
 export const DEFAULT_WORKSPACE_PLAN: WorkspacePlan = "FREE";
 
+export const WORKSPACE_PLAN_RANK: Record<WorkspacePlan, number> = {
+  FREE: 1,
+  PRO: 2,
+  ENTERPRISE: 3,
+};
+
+export const compareWorkspacePlans = (a: WorkspacePlan, b: WorkspacePlan) => {
+  return WORKSPACE_PLAN_RANK[a] - WORKSPACE_PLAN_RANK[b];
+};
+
+export const getHigherWorkspacePlan = (a: WorkspacePlan, b: WorkspacePlan): WorkspacePlan => {
+  return compareWorkspacePlans(a, b) >= 0 ? a : b;
+};
+
 export const isKnownWorkspacePlan = (value: string): value is WorkspacePlan => {
   return value === "FREE" || value === "PRO" || value === "ENTERPRISE";
 };

@@ -1,4 +1,5 @@
 import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../../generated/prisma/enums";
+import { WorkspacePlan } from "../../config/planFeatures";
 
 export interface ICreateWorkspacePayload {
   name: string;
@@ -13,6 +14,14 @@ export interface IUpdateMemberPayload {
   status?: WorkspaceMemberStatus;
 }
 
+export interface IWorkspacePlanMeta {
+  basePlan: WorkspacePlan;
+  effectivePlan: WorkspacePlan;
+  isTrialActive: boolean;
+  trialStartsAt: Date | null;
+  trialEndsAt: Date | null;
+}
+
 export interface IWorkspaceResponse {
   id: string;
   name: string;
@@ -21,6 +30,7 @@ export interface IWorkspaceResponse {
   updatedAt: Date;
   createdByUserId: string;
   _count?: { members: number };
+  planMeta?: IWorkspacePlanMeta;
 }
 
 export interface IMyWorkspaceResponse extends IWorkspaceResponse {

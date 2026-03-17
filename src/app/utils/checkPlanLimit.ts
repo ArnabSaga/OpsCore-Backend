@@ -8,6 +8,7 @@ import {
   PlanLimitKey,
   RateLimitActionKey,
   WorkspacePlan,
+  getHigherWorkspacePlan,
   isKnownWorkspacePlan,
 } from "../config/planFeatures";
 import {
@@ -45,6 +46,15 @@ export interface WorkspacePlanContext {
 export interface UsageResolverInput {
   workspaceId: string;
   resourceId?: string;
+}
+
+export interface UserWorkspaceCreationAccess {
+  allowed: true;
+  currentUsage: number;
+  projectedUsage: number;
+  limit: number | null;
+  controllingPlan: WorkspacePlan;
+  requiresMultiWorkspaceFeature: boolean;
 }
 
 const isDbConnectionError = (error: unknown) => {
@@ -452,33 +462,94 @@ export const assertPlanLimitNotReached = async (options: {
   };
 };
 
-export const assertUserCanCreateWorkspace = async (userId: string) => {
-  try {
-    const workspaceCount = await prisma.workspaceMember.count({
-      where: {
-        userId,
-        role: WorkspaceMemberRole.OWNER,
-        workspace: {
-          deletedAt: null,
-        },
+const getUserOwnedWorkspacePlanSummary = async (userId: string) => {
+  const ownedWorkspaces = await prisma.workspaceMember.findMany({
+    where: {
+      userId,
+      role: WorkspaceMemberRole.OWNER,
+      workspace: {
+        deletedAt: null,
       },
-    });
+    },
+    select: {
+      workspaceId: true,
+    },
+  });
 
-    const limit = PLAN_FEATURES[DEFAULT_WORKSPACE_PLAN].limits.workspaces;
+  const ownedWorkspaceIds = ownedWorkspaces.map((item) => item.workspaceId);
+  const workspaceCount = ownedWorkspaceIds.length;
 
-    if (limit !== null && workspaceCount >= limit) {
+  if (workspaceCount === 0) {
+    return {
+      workspaceCount,
+      controllingPlan: DEFAULT_WORKSPACE_PLAN,
+      hasMultiWorkspaceAccess: false,
+    };
+  }
+
+  const planContexts = await Promise.all(
+    ownedWorkspaceIds.map((workspaceId) => resolveWorkspacePlanContext(workspaceId))
+  );
+
+  const controllingPlan = planContexts.reduce<WorkspacePlan>((highest, current) => {
+    return getHigherWorkspacePlan(highest, current.effectivePlan);
+  }, DEFAULT_WORKSPACE_PLAN);
+
+  const hasMultiWorkspaceAccess = planContexts.some(
+    (context) => PLAN_FEATURES[context.effectivePlan].flags["workspace.multiWorkspace"]
+  );
+
+  return {
+    workspaceCount,
+    controllingPlan,
+    hasMultiWorkspaceAccess,
+  };
+};
+
+export const assertUserCanCreateWorkspace = async (
+  userId: string
+): Promise<UserWorkspaceCreationAccess> => {
+  try {
+    const { workspaceCount, controllingPlan, hasMultiWorkspaceAccess } =
+      await getUserOwnedWorkspacePlanSummary(userId);
+
+    if (workspaceCount === 0) {
+      const limit = PLAN_FEATURES[DEFAULT_WORKSPACE_PLAN].limits.workspaces;
+
+      return {
+        allowed: true,
+        currentUsage: 0,
+        projectedUsage: 1,
+        limit,
+        controllingPlan: DEFAULT_WORKSPACE_PLAN,
+        requiresMultiWorkspaceFeature: false,
+      };
+    }
+
+    if (!hasMultiWorkspaceAccess) {
       throw new AppError(
         status.FORBIDDEN,
-        "Workspace creation limit reached for your current plan."
+        'Your current plan does not allow creating multiple workspaces. Upgrade to unlock "workspace.multiWorkspace".'
+      );
+    }
+
+    const limit = PLAN_FEATURES[controllingPlan].limits.workspaces;
+    const projectedUsage = workspaceCount + 1;
+
+    if (limit !== null && projectedUsage > limit) {
+      throw new AppError(
+        status.FORBIDDEN,
+        `You have reached the "workspaces" limit for your current plan.`
       );
     }
 
     return {
       allowed: true,
       currentUsage: workspaceCount,
-      projectedUsage: workspaceCount + 1,
+      projectedUsage,
       limit,
-      assumedPlan: DEFAULT_WORKSPACE_PLAN,
+      controllingPlan,
+      requiresMultiWorkspaceFeature: true,
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
