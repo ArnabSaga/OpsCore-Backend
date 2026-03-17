@@ -2,6 +2,7 @@ import { Router } from "express";
 import { AuthRoutes } from "../modules/auth/auth.route";
 import { InvitationRoutes } from "../modules/invitation/invitation.route";
 import { ProjectRoutes } from "../modules/project/project.routes";
+import { TaskRoutes } from "../modules/task/task.routes";
 import { UserRoutes } from "../modules/user/user.route";
 import { WorkspaceRoutes } from "../modules/workspace/workspace.route";
 
@@ -18,6 +19,7 @@ const moduleRoutes: TModuleRoutes[] = [
   { path: "/workspaces", route: WorkspaceRoutes },
   { path: "/invitations", route: InvitationRoutes },
   { path: "/projects", route: ProjectRoutes },
+  { path: "/tasks", route: TaskRoutes },
 ];
 
 moduleRoutes.forEach((route) => router.use(route.path, route.route));

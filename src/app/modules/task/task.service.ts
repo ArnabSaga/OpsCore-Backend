@@ -1,0 +1,465 @@
+import { Request } from "express";
+import status from "http-status";
+import AppError from "../../errors/AppError";
+import { prisma } from "../../lib/prisma";
+import {
+  ICreateTaskPayload,
+  ITaskListItem,
+  ITaskQuery,
+  ITaskResponse,
+  IUpdateTaskPayload,
+} from "./task.interface";
+
+const isDbConnectionError = (error: unknown) => {
+  const prismaError = error as { code?: string };
+  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
+};
+
+const getProjectOrThrow = async (projectId: string, workspaceId: string) => {
+  const project = await prisma.project.findFirst({
+    where: {
+      id: projectId,
+      workspaceId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      workspaceId: true,
+      name: true,
+      status: true,
+      archivedAt: true,
+      deletedAt: true,
+    },
+  });
+
+  if (!project) {
+    throw new AppError(status.NOT_FOUND, "Project not found");
+  }
+
+  return project;
+};
+
+const assertProjectUsableForWrites = async (projectId: string, workspaceId: string) => {
+  const project = await getProjectOrThrow(projectId, workspaceId);
+
+  if (project.archivedAt || project.status === "ARCHIVED") {
+    throw new AppError(
+      status.BAD_REQUEST,
+      "Tasks cannot be created or moved under an archived project"
+    );
+  }
+
+  return project;
+};
+
+const assertAssignableUser = async (userId: string, workspaceId: string) => {
+  const membership = await prisma.workspaceMember.findFirst({
+    where: {
+      workspaceId,
+      userId,
+      status: "ACTIVE",
+      workspace: { deletedAt: null },
+    },
+    select: {
+      id: true,
+      userId: true,
+    },
+  });
+
+  if (!membership) {
+    throw new AppError(
+      status.BAD_REQUEST,
+      "Assigned user must be an active member of the current workspace"
+    );
+  }
+};
+
+const getScopedTaskOrThrow = async (taskId: string, workspaceId: string) => {
+  const task = await prisma.task.findFirst({
+    where: {
+      id: taskId,
+      workspaceId,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      workspaceId: true,
+      projectId: true,
+      assignedToUserId: true,
+      createdByUserId: true,
+      status: true,
+      priority: true,
+      dueDate: true,
+      project: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          archivedAt: true,
+          deletedAt: true,
+        },
+      },
+    },
+  });
+
+  if (!task) {
+    throw new AppError(status.NOT_FOUND, "Task not found");
+  }
+
+  return task;
+};
+
+const getTaskSelect = {
+  id: true,
+  workspaceId: true,
+  projectId: true,
+  assignedToUserId: true,
+  createdByUserId: true,
+  title: true,
+  description: true,
+  status: true,
+  priority: true,
+  dueDate: true,
+  createdAt: true,
+  updatedAt: true,
+  project: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      archivedAt: true,
+    },
+  },
+  assignedToUser: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+    },
+  },
+  createdByUser: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+    },
+  },
+  _count: {
+    select: {
+      comments: true,
+      attachments: true,
+    },
+  },
+};
+
+const assertTaskUpdatePermission = (
+  req: Request,
+  payload: IUpdateTaskPayload,
+  existingTask: Awaited<ReturnType<typeof getScopedTaskOrThrow>>
+) => {
+  const workspaceRole = req.workspaceRole;
+  const currentUserId = req.user!.id;
+
+  if (!workspaceRole) {
+    throw new AppError(status.FORBIDDEN, "Workspace role is missing from request context");
+  }
+
+  if (workspaceRole === "OWNER" || workspaceRole === "ADMIN") {
+    return;
+  }
+
+  if (workspaceRole !== "MEMBER") {
+    throw new AppError(status.FORBIDDEN, "You do not have permission to update this task");
+  }
+
+  if (existingTask.assignedToUserId !== currentUserId) {
+    throw new AppError(status.FORBIDDEN, "Members can only update tasks assigned to themselves");
+  }
+
+  const memberAllowedFields = new Set(["status", "description"]);
+  const attemptedFields = Object.keys(payload);
+
+  const hasForbiddenField = attemptedFields.some((field) => !memberAllowedFields.has(field));
+
+  if (hasForbiddenField) {
+    throw new AppError(
+      status.FORBIDDEN,
+      "Members can only update task status and description on their assigned tasks"
+    );
+  }
+};
+
+const getTasks = async (
+  req: Request
+): Promise<{
+  data: ITaskListItem[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+}> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const query = req.query as unknown as ITaskQuery;
+
+    const page = Math.max(Number(query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
+    const skip = (page - 1) * limit;
+    const sortBy = query.sortBy ?? "createdAt";
+    const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
+
+    const where: Record<string, unknown> = {
+      workspaceId,
+      deletedAt: null,
+    };
+
+    if (query.searchTerm) {
+      where.OR = [
+        { title: { contains: query.searchTerm, mode: "insensitive" } },
+        { description: { contains: query.searchTerm, mode: "insensitive" } },
+      ];
+    }
+
+    if (query.projectId) {
+      await getProjectOrThrow(query.projectId, workspaceId);
+      where.projectId = query.projectId;
+    }
+
+    if (query.assignedToUserId) {
+      where.assignedToUserId = query.assignedToUserId;
+    }
+
+    if (query.assignedToMe === "true") {
+      where.assignedToUserId = req.user!.id;
+    }
+
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    if (query.priority) {
+      where.priority = query.priority;
+    }
+
+    if (query.overdue === "true") {
+      where.dueDate = { lt: new Date() };
+      where.status = { not: "DONE" };
+    } else if (query.dueFrom || query.dueTo) {
+      where.dueDate = {
+        ...(query.dueFrom ? { gte: new Date(query.dueFrom) } : {}),
+        ...(query.dueTo ? { lte: new Date(query.dueTo) } : {}),
+      };
+    }
+
+    const [tasks, total] = await Promise.all([
+      prisma.task.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+        select: {
+          id: true,
+          workspaceId: true,
+          projectId: true,
+          assignedToUserId: true,
+          createdByUserId: true,
+          title: true,
+          description: true,
+          status: true,
+          priority: true,
+          dueDate: true,
+          createdAt: true,
+          updatedAt: true,
+          project: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+            },
+          },
+          assignedToUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          createdByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          _count: {
+            select: {
+              comments: true,
+              attachments: true,
+            },
+          },
+        },
+      }),
+      prisma.task.count({ where }),
+    ]);
+
+    return {
+      data: tasks,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch tasks");
+  }
+};
+
+const createTask = async (req: Request): Promise<ITaskResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const createdByUserId = req.user!.id;
+    const payload = req.body as ICreateTaskPayload;
+
+    await assertProjectUsableForWrites(payload.projectId, workspaceId);
+
+    if (payload.assignedToUserId) {
+      await assertAssignableUser(payload.assignedToUserId, workspaceId);
+    }
+
+    const task = await prisma.task.create({
+      data: {
+        workspaceId,
+        projectId: payload.projectId,
+        createdByUserId,
+        assignedToUserId: payload.assignedToUserId ?? null,
+        title: payload.title.trim(),
+        description: payload.description?.trim(),
+        status: payload.status ?? "TODO",
+        priority: payload.priority ?? "MEDIUM",
+        dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
+      },
+      select: getTaskSelect,
+    });
+
+    return task;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create task");
+  }
+};
+
+const getTask = async (req: Request): Promise<ITaskResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+
+    await getScopedTaskOrThrow(taskId, workspaceId);
+
+    const task = await prisma.task.findFirst({
+      where: {
+        id: taskId,
+        workspaceId,
+        deletedAt: null,
+      },
+      select: getTaskSelect,
+    });
+
+    if (!task) {
+      throw new AppError(status.NOT_FOUND, "Task not found");
+    }
+
+    return task;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch task");
+  }
+};
+
+const updateTask = async (req: Request): Promise<ITaskResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const payload = req.body as IUpdateTaskPayload;
+
+    const existingTask = await getScopedTaskOrThrow(taskId, workspaceId);
+
+    assertTaskUpdatePermission(req, payload, existingTask);
+
+    if (payload.projectId) {
+      await assertProjectUsableForWrites(payload.projectId, workspaceId);
+    }
+
+    if (payload.assignedToUserId) {
+      await assertAssignableUser(payload.assignedToUserId, workspaceId);
+    }
+
+    const task = await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        ...(payload.projectId !== undefined && { projectId: payload.projectId }),
+        ...(payload.title !== undefined && { title: payload.title.trim() }),
+        ...(payload.description !== undefined && {
+          description: payload.description === null ? null : payload.description.trim(),
+        }),
+        ...(payload.assignedToUserId !== undefined && {
+          assignedToUserId: payload.assignedToUserId,
+        }),
+        ...(payload.status !== undefined && { status: payload.status }),
+        ...(payload.priority !== undefined && { priority: payload.priority }),
+        ...(payload.dueDate !== undefined && {
+          dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
+        }),
+      },
+      select: getTaskSelect,
+    });
+
+    return task;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update task");
+  }
+};
+
+const deleteTask = async (req: Request): Promise<void> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+
+    await getScopedTaskOrThrow(taskId, workspaceId);
+
+    await prisma.task.update({
+      where: { id: taskId },
+      data: { deletedAt: new Date() },
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete task");
+  }
+};
+
+export const TaskService = {
+  getTasks,
+  createTask,
+  getTask,
+  updateTask,
+  deleteTask,
+};
