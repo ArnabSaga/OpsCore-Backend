@@ -5,6 +5,7 @@ import { ProjectRoutes } from "../modules/project/project.routes";
 import { TaskRoutes } from "../modules/task/task.routes";
 import { UserRoutes } from "../modules/user/user.route";
 import { WorkspaceRoutes } from "../modules/workspace/workspace.route";
+import { WorkspaceMemberRoutes } from '../modules/workspaceMember/workspaceMember.route';
 
 type TModuleRoutes = {
   path: string;
@@ -20,6 +21,7 @@ const moduleRoutes: TModuleRoutes[] = [
   { path: "/invitations", route: InvitationRoutes },
   { path: "/projects", route: ProjectRoutes },
   { path: "/tasks", route: TaskRoutes },
+  { path: "/workspace-members", route: WorkspaceMemberRoutes },
 ];
 
 moduleRoutes.forEach((route) => router.use(route.path, route.route));
