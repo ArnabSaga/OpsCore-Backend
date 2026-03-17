@@ -9,12 +9,23 @@ import {
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import {
+  assertPlanFeatureEnabled,
+  assertPlanLimitNotReached,
+  getCurrentPlanUsage,
+  resolveWorkspacePlanContext,
+} from "../../utils/checkPlanLimit";
+import {
   IAcceptInvitationResponse,
   ICreateInvitationPayload,
   IInvitationResponse,
 } from "./invitation.interface";
 
 const INVITATION_EXPIRY_DAYS = 7;
+
+const isDbConnectionError = (error: unknown) => {
+  const prismaError = error as { code?: string };
+  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
+};
 
 const markExpiredPendingInvitations = async (
   workspaceId: string,
@@ -33,10 +44,44 @@ const markExpiredPendingInvitations = async (
   });
 };
 
+const assertInvitationRoleAllowed = async (
+  workspaceId: string,
+  role: Exclude<WorkspaceMemberRole, "OWNER">
+) => {
+  if (role === WorkspaceMemberRole.ADMIN) {
+    await assertPlanFeatureEnabled(workspaceId, "workspace.advancedPermissions");
+  }
+};
+
+const assertWorkspaceCanInviteMoreMembers = async (workspaceId: string) => {
+  const activeMembersCount = await getCurrentPlanUsage({
+    workspaceId,
+    limitKey: "members",
+  });
+
+  const pendingInvitationsCount = await prisma.workspaceInvitation.count({
+    where: {
+      workspaceId,
+      status: InvitationStatus.PENDING,
+      expiresAt: { gte: new Date() },
+    },
+  });
+
+  await assertPlanLimitNotReached({
+    workspaceId,
+    limitKey: "members",
+    incrementBy: 1,
+    customUsage: activeMembersCount + pendingInvitationsCount,
+    customMessage:
+      'You have reached the "members" limit for your current plan. Remove members or upgrade your plan to invite more people.',
+  });
+};
+
 const getInvitations = async (req: Request): Promise<IInvitationResponse[]> => {
   try {
     const workspaceId = req.params.workspaceId as string;
 
+    await assertPlanFeatureEnabled(workspaceId, "workspace.memberManagement");
     await markExpiredPendingInvitations(workspaceId);
 
     const invitations = await prisma.workspaceInvitation.findMany({
@@ -49,6 +94,8 @@ const getInvitations = async (req: Request): Promise<IInvitationResponse[]> => {
       orderBy: { createdAt: "desc" },
     });
 
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
     return invitations.map((invitation) => ({
       id: invitation.id,
       email: invitation.email,
@@ -57,9 +104,18 @@ const getInvitations = async (req: Request): Promise<IInvitationResponse[]> => {
       expiresAt: invitation.expiresAt,
       createdAt: invitation.createdAt,
       invitedBy: invitation.invitedBy,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
     }));
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch invitations");
   }
 };
@@ -73,6 +129,16 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
 
     const email = payload.email.trim().toLowerCase();
     const role: Exclude<WorkspaceMemberRole, "OWNER"> = payload.role ?? "MEMBER";
+
+    await assertPlanFeatureEnabled(workspaceId, "workspace.memberManagement");
+    await assertInvitationRoleAllowed(workspaceId, role);
+    await assertPlanLimitNotReached({
+      workspaceId,
+      limitKey: "monthlyInvitations",
+      incrementBy: 1,
+      customMessage: 'You have reached the "monthlyInvitations" limit for your current plan.',
+    });
+    await assertWorkspaceCanInviteMoreMembers(workspaceId);
 
     if (email === requesterEmail) {
       throw new AppError(status.BAD_REQUEST, "You cannot invite yourself");
@@ -130,6 +196,8 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
       },
     });
 
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
     return {
       id: invitation.id,
       email: invitation.email,
@@ -138,9 +206,18 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
       expiresAt: invitation.expiresAt,
       createdAt: invitation.createdAt,
       invitedBy: invitation.invitedBy,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create invitation");
   }
 };
@@ -149,6 +226,8 @@ const cancelInvitation = async (req: Request): Promise<void> => {
   try {
     const workspaceId = req.params.workspaceId as string;
     const invitationId = req.params.invitationId as string;
+
+    await assertPlanFeatureEnabled(workspaceId, "workspace.memberManagement");
 
     const invitation = await prisma.workspaceInvitation.findFirst({
       where: { id: invitationId, workspaceId },
@@ -185,6 +264,9 @@ const cancelInvitation = async (req: Request): Promise<void> => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to cancel invitation");
   }
 };
@@ -233,6 +315,13 @@ const acceptInvitation = async (req: Request): Promise<IAcceptInvitationResponse
       throw new AppError(status.NOT_FOUND, "Workspace no longer exists");
     }
 
+    await assertPlanFeatureEnabled(invitation.workspaceId, "workspace.memberManagement");
+    await assertInvitationRoleAllowed(
+      invitation.workspaceId,
+      invitation.role as Exclude<WorkspaceMemberRole, "OWNER">
+    );
+    await assertWorkspaceCanInviteMoreMembers(invitation.workspaceId);
+
     const existingMembership = await prisma.workspaceMember.findFirst({
       where: {
         workspaceId: invitation.workspaceId,
@@ -270,6 +359,9 @@ const acceptInvitation = async (req: Request): Promise<IAcceptInvitationResponse
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to accept invitation");
   }
 };
@@ -319,6 +411,9 @@ const declineInvitation = async (req: Request): Promise<void> => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to decline invitation");
   }
 };
