@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { WorkspaceMemberRole } from "../../../generated/prisma/enums";
 import { requireAuth } from "../../middlewares/requireAuth";
+import { requireFeature } from "../../middlewares/requireFeature";
 import { requireRole } from "../../middlewares/requireRole";
 import validateRequest from "../../middlewares/validateRequest";
 import { workspaceContext } from "../../middlewares/workspaceContext";
@@ -16,6 +17,7 @@ router.get("/", validateRequest(TaskValidation.getTasksQuerySchema), TaskControl
 
 router.post(
   "/",
+  requireFeature("tasks.create"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   validateRequest(TaskValidation.createTaskSchema),
   TaskController.createTask

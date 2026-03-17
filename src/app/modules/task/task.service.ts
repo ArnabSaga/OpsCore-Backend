@@ -3,6 +3,11 @@ import status from "http-status";
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import {
+  assertPlanFeatureEnabled,
+  assertPlanLimitNotReached,
+  resolveWorkspacePlanContext,
+} from "../../utils/checkPlanLimit";
+import {
   ICreateTaskPayload,
   ITaskListItem,
   ITaskQuery,
@@ -152,6 +157,24 @@ const getTaskSelect = {
       attachments: true,
     },
   },
+} as const;
+
+const hasAdvancedTaskFilters = (query: ITaskQuery) => {
+  return Boolean(
+    query.searchTerm ||
+    query.assignedToUserId ||
+    query.overdue === "true" ||
+    query.dueFrom ||
+    query.dueTo ||
+    query.sortBy === "priority" ||
+    query.sortBy === "dueDate"
+  );
+};
+
+const assertTaskQueryAccess = async (workspaceId: string, query: ITaskQuery) => {
+  if (hasAdvancedTaskFilters(query)) {
+    await assertPlanFeatureEnabled(workspaceId, "tasks.advancedFilters");
+  }
 };
 
 const assertTaskUpdatePermission = (
@@ -200,6 +223,8 @@ const getTasks = async (
   try {
     const workspaceId = req.workspaceId!;
     const query = req.query as unknown as ITaskQuery;
+
+    await assertTaskQueryAccess(workspaceId, query);
 
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
@@ -346,6 +371,14 @@ const createTask = async (req: Request): Promise<ITaskResponse> => {
     const createdByUserId = req.user!.id;
     const payload = req.body as ICreateTaskPayload;
 
+    await assertPlanFeatureEnabled(workspaceId, "tasks.create");
+    await assertPlanLimitNotReached({
+      workspaceId,
+      limitKey: "tasks",
+      incrementBy: 1,
+      customMessage: 'You have reached the "tasks" limit for your current plan.',
+    });
+
     await assertProjectUsableForWrites(payload.projectId, workspaceId);
 
     if (payload.assignedToUserId) {
@@ -367,7 +400,17 @@ const createTask = async (req: Request): Promise<ITaskResponse> => {
       select: getTaskSelect,
     });
 
-    return task;
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      ...task,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     if (isDbConnectionError(error)) {

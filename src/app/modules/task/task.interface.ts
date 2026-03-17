@@ -1,4 +1,5 @@
 import { ProjectStatus, TaskPriority, TaskStatus } from "../../../generated/prisma/enums";
+import { WorkspacePlan } from "../../config/planFeatures";
 
 export interface ICreateTaskPayload {
   projectId: string;
@@ -34,6 +35,13 @@ export interface ITaskQuery {
   limit?: string;
   sortBy?: "createdAt" | "updatedAt" | "dueDate" | "title" | "status" | "priority";
   sortOrder?: "asc" | "desc";
+}
+
+export interface ITaskPlanMeta {
+  workspacePlan: WorkspacePlan;
+  isTrialActive: boolean;
+  trialStartsAt: Date | null;
+  trialEndsAt: Date | null;
 }
 
 export interface ITaskListItem {
@@ -107,4 +115,5 @@ export interface ITaskResponse {
     comments: number;
     attachments: number;
   };
+  planMeta?: ITaskPlanMeta;
 }
