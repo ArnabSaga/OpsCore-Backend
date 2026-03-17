@@ -1,4 +1,4 @@
-import { TAuthenticatedUser, TWorkspaceMembershipContext } from "../../app/interfaces/auth";
+import { TAuthenticatedUser, TWorkspaceMembershipContext } from "../interfaces/auth.interface";
 
 declare global {
   namespace Express {
