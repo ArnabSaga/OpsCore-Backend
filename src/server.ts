@@ -2,6 +2,7 @@ import { Server } from "http";
 import app from "./app";
 import { envVars } from "./app/config/env";
 import { prisma } from "./app/lib/prisma";
+import { seedSuperAdmin } from './app/utils/seedAdmin';
 
 let server: Server;
 let isShuttingDown = false;
@@ -70,6 +71,8 @@ process.on("SIGINT", () => {
 
 async function main() {
   try {
+    await seedSuperAdmin();
+
     await prisma.$connect();
     console.log("🗃️ Database connected successfully");
 
