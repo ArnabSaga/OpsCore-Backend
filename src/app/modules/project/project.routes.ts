@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { WorkspaceMemberRole } from "../../../generated/prisma/enums";
 import { requireAuth } from "../../middlewares/requireAuth";
+import { requireFeature } from "../../middlewares/requireFeature";
 import { requireRole } from "../../middlewares/requireRole";
 import validateRequest from "../../middlewares/validateRequest";
 import { workspaceContext } from "../../middlewares/workspaceContext";
@@ -20,6 +21,7 @@ router.get(
 
 router.post(
   "/",
+  requireFeature("projects.create"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   validateRequest(ProjectValidation.createProjectSchema),
   ProjectController.createProject
@@ -46,7 +48,6 @@ router.delete(
   ProjectController.deleteProject
 );
 
-
 router.get(
   "/:projectId/tasks",
   validateRequest(ProjectValidation.projectIdParamSchema),
@@ -63,6 +64,7 @@ router.get(
 router.post(
   "/:projectId/members",
   validateRequest(ProjectValidation.projectIdParamSchema),
+  requireFeature("projects.assignMembers"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   validateRequest(ProjectValidation.assignProjectMembersSchema),
   ProjectController.assignProjectMembers

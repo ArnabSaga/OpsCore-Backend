@@ -3,6 +3,11 @@ import status from "http-status";
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import {
+  assertPlanFeatureEnabled,
+  assertPlanLimitNotReached,
+  resolveWorkspacePlanContext,
+} from "../../utils/checkPlanLimit";
+import {
   IAssignProjectMembersPayload,
   IAssignProjectMembersResponse,
   ICreateProjectPayload,
@@ -14,6 +19,11 @@ import {
   IProjectTaskQuery,
   IUpdateProjectPayload,
 } from "./project.interface";
+
+const isDbConnectionError = (error: unknown) => {
+  const prismaError = error as { code?: string };
+  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
+};
 
 const buildProjectBaseWhere = (workspaceId: string, includeArchived = false) => {
   return {
@@ -123,6 +133,9 @@ const getProjects = async (
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch projects");
   }
 };
@@ -132,6 +145,18 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
     const workspaceId = req.workspaceId!;
     const createdByUserId = req.user!.id;
     const payload = req.body as ICreateProjectPayload;
+
+    await assertPlanFeatureEnabled(workspaceId, "projects.create");
+    await assertPlanLimitNotReached({
+      workspaceId,
+      limitKey: "projects",
+      incrementBy: 1,
+      customMessage: 'You have reached the "projects" limit for your current plan.',
+    });
+
+    if (payload.status === "ARCHIVED") {
+      await assertPlanFeatureEnabled(workspaceId, "projects.archive");
+    }
 
     const project = await prisma.project.create({
       data: {
@@ -176,11 +201,21 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
       },
     });
 
-    return project;
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      ...project,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (error?.code === "P1001" || error?.code === "P1002") {
+    if (isDbConnectionError(error)) {
       throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
     }
 
@@ -239,6 +274,9 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
     return project;
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project");
   }
 };
@@ -271,6 +309,10 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
 
     const shouldArchive = payload.archived === true || payload.status === "ARCHIVED";
     const shouldUnarchive = payload.archived === false && existingProject.archivedAt !== null;
+
+    if (shouldArchive || shouldUnarchive) {
+      await assertPlanFeatureEnabled(workspaceId, "projects.archive");
+    }
 
     const project = await prisma.project.update({
       where: { id: projectId },
@@ -330,7 +372,7 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (error?.code === "P1001" || error?.code === "P1002") {
+    if (isDbConnectionError(error)) {
       throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
     }
 
@@ -352,7 +394,7 @@ const deleteProject = async (req: Request): Promise<void> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (error?.code === "P1001" || error?.code === "P1002") {
+    if (isDbConnectionError(error)) {
       throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
     }
 
@@ -431,6 +473,9 @@ const getProjectTasks = async (
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project tasks");
   }
 };
@@ -463,6 +508,9 @@ const getProjectMembers = async (req: Request): Promise<IProjectMemberResponse[]
     return members;
   } catch (error) {
     if (error instanceof AppError) throw error;
+    if (isDbConnectionError(error)) {
+      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
+    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project members");
   }
 };
@@ -473,6 +521,7 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
     const projectId = req.params.projectId as string;
     const { userIds } = req.body as IAssignProjectMembersPayload;
 
+    await assertPlanFeatureEnabled(workspaceId, "projects.assignMembers");
     await getScopedProjectOrThrow(projectId, workspaceId);
 
     const workspaceMembers = await prisma.workspaceMember.findMany({
@@ -535,7 +584,7 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (error?.code === "P1001" || error?.code === "P1002") {
+    if (isDbConnectionError(error)) {
       throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
     }
 
