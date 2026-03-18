@@ -1,5 +1,5 @@
 model ActivityLog {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid(7))
   workspaceId String
   userId      String
   action      String

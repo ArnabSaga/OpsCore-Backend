@@ -1,5 +1,5 @@
 model Project {
-  id              String        @id @default(uuid())
+  id              String        @id @default(uuid(7))
   workspaceId     String
   createdByUserId String
   name            String
@@ -28,7 +28,7 @@ model Project {
 }
 
 model ProjectMember {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid(7))
   workspaceId String
   projectId   String
   userId      String
@@ -46,7 +46,7 @@ model ProjectMember {
 }
 
 model Task {
-  id               String       @id @default(uuid())
+  id               String       @id @default(uuid(7))
   workspaceId      String
   projectId        String
   assignedToUserId String?
@@ -79,7 +79,7 @@ model Task {
 }
 
 model TaskComment {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid(7))
   workspaceId String
   taskId      String
   userId      String
@@ -98,7 +98,7 @@ model TaskComment {
 }
 
 model TaskAttachment {
-  id           String   @id @default(uuid())
+  id           String   @id @default(uuid(7))
   workspaceId  String
   taskId       String
   uploadedById String

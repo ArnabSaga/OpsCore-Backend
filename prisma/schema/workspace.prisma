@@ -1,5 +1,5 @@
 model Workspace {
-  id               String   @id @default(uuid())
+  id               String   @id @default(uuid(7))
   name             String
   slug             String   @unique
   stripeCustomerId String?  @unique
@@ -35,7 +35,7 @@ model Workspace {
 }
 
 model WorkspaceMember {
-  id            String                @id @default(uuid())
+  id            String                @id @default(uuid(7))
   workspaceId   String
   userId        String
   role          WorkspaceMemberRole   @default(MEMBER)
@@ -59,7 +59,7 @@ model WorkspaceMember {
 }
 
 model WorkspaceInvitation {
-  id          String              @id @default(uuid())
+  id          String              @id @default(uuid(7))
   workspaceId String
   email       String
   role        WorkspaceMemberRole @default(MEMBER)
