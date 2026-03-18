@@ -15,10 +15,6 @@ import {
   IUpdateTaskPayload,
 } from "./task.interface";
 
-const isDbConnectionError = (error: unknown) => {
-  const prismaError = error as { code?: string };
-  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
-};
 
 const getProjectOrThrow = async (projectId: string, workspaceId: string) => {
   const project = await prisma.project.findFirst({
@@ -358,9 +354,6 @@ const getTasks = async (
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch tasks");
   }
 };
@@ -413,9 +406,6 @@ const createTask = async (req: Request): Promise<ITaskResponse> => {
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create task");
   }
 };
@@ -443,9 +433,6 @@ const getTask = async (req: Request): Promise<ITaskResponse> => {
     return task;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch task");
   }
 };
@@ -495,9 +482,6 @@ const updateTask = async (req: Request): Promise<ITaskResponse> => {
     return task;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update task");
   }
 };
@@ -515,9 +499,7 @@ const deleteTask = async (req: Request): Promise<void> => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
+
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete task");
   }
 };

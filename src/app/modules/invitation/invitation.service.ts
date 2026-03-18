@@ -22,10 +22,6 @@ import {
 
 const INVITATION_EXPIRY_DAYS = 7;
 
-const isDbConnectionError = (error: unknown) => {
-  const prismaError = error as { code?: string };
-  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
-};
 
 const markExpiredPendingInvitations = async (
   workspaceId: string,
@@ -113,9 +109,6 @@ const getInvitations = async (req: Request): Promise<IInvitationResponse[]> => {
     }));
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch invitations");
   }
 };
@@ -215,9 +208,6 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create invitation");
   }
 };
@@ -264,9 +254,6 @@ const cancelInvitation = async (req: Request): Promise<void> => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to cancel invitation");
   }
 };
@@ -359,9 +346,6 @@ const acceptInvitation = async (req: Request): Promise<IAcceptInvitationResponse
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to accept invitation");
   }
 };
@@ -411,9 +395,6 @@ const declineInvitation = async (req: Request): Promise<void> => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to decline invitation");
   }
 };

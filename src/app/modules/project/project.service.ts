@@ -20,10 +20,6 @@ import {
   IUpdateProjectPayload,
 } from "./project.interface";
 
-const isDbConnectionError = (error: unknown) => {
-  const prismaError = error as { code?: string };
-  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
-};
 
 const buildProjectBaseWhere = (workspaceId: string, includeArchived = false) => {
   return {
@@ -133,9 +129,6 @@ const getProjects = async (
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch projects");
   }
 };
@@ -215,9 +208,6 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
 
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create project");
   }
@@ -274,9 +264,6 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
     return project;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project");
   }
 };
@@ -372,9 +359,6 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
 
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update project");
   }
@@ -394,9 +378,6 @@ const deleteProject = async (req: Request): Promise<void> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
 
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete project");
   }
@@ -473,9 +454,6 @@ const getProjectTasks = async (
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project tasks");
   }
 };
@@ -508,9 +486,6 @@ const getProjectMembers = async (req: Request): Promise<IProjectMemberResponse[]
     return members;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project members");
   }
 };
@@ -584,9 +559,6 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
 
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to assign project members");
   }

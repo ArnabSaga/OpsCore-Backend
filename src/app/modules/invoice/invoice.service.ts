@@ -16,10 +16,6 @@ import {
 } from "./invoice.interface";
 import { formatMoney, generateInvoicePdf, mapInvoiceToEmailTemplateData } from "./invoice.utils";
 
-const isDbConnectionError = (error: unknown) => {
-  const prismaError = error as { code?: string };
-  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
-};
 
 const normalizeCurrency = (currency?: string) => {
   return (currency?.trim().toUpperCase() || "USD").slice(0, 10);
@@ -317,9 +313,6 @@ const getInvoices = async (
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch invoices");
   }
 };
@@ -382,9 +375,6 @@ const createInvoice = async (req: Request): Promise<IInvoiceResponse> => {
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to generate a unique invoice number");
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create invoice");
   }
 };
@@ -415,9 +405,6 @@ const getInvoice = async (req: Request): Promise<IInvoiceResponse> => {
     return mapInvoiceResponse(invoice);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch invoice");
   }
 };
@@ -504,9 +491,6 @@ const updateInvoice = async (req: Request): Promise<IInvoiceResponse> => {
     return mapInvoiceResponse(invoice);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update invoice");
   }
 };
@@ -533,9 +517,6 @@ const deleteInvoice = async (req: Request): Promise<void> => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete invoice");
   }
 };
@@ -592,9 +573,6 @@ const sendInvoice = async (req: Request): Promise<IInvoiceResponse> => {
     return mappedInvoice;
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to send invoice");
   }
 };
@@ -627,9 +605,6 @@ const markInvoicePaid = async (req: Request): Promise<IInvoiceResponse> => {
     return mapInvoiceResponse(invoice);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to mark invoice as paid");
   }
 };
@@ -661,9 +636,7 @@ const cancelInvoice = async (req: Request): Promise<IInvoiceResponse> => {
     return mapInvoiceResponse(invoice);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
+
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to cancel invoice");
   }
 };

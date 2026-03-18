@@ -9,10 +9,6 @@ import {
   IWorkspaceMemberResponse,
 } from "./workspaceMember.interface";
 
-const isDbConnectionError = (error: unknown) => {
-  const prismaError = error as { code?: string };
-  return prismaError?.code === "P1001" || prismaError?.code === "P1002";
-};
 
 const getScopedMemberOrThrow = async (workspaceId: string, memberId: string) => {
   const member = await prisma.workspaceMember.findFirst({
@@ -164,9 +160,6 @@ const getMembers = async (req: Request): Promise<IWorkspaceMemberResponse[]> => 
     }));
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch members");
   }
 };
@@ -252,9 +245,6 @@ const updateMember = async (req: Request): Promise<IWorkspaceMemberResponse> => 
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update member");
   }
 };
@@ -288,9 +278,7 @@ const removeMember = async (req: Request): Promise<void> => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    if (isDbConnectionError(error)) {
-      throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
-    }
+
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to remove member");
   }
 };
