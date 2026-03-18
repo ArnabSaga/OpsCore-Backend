@@ -6,6 +6,26 @@ import { envVars } from "../config/env";
 import { sendEmail } from "../utils/email";
 import { prisma } from "./prisma";
 
+const sendOtpEmail = async (options: {
+  email: string;
+  name: string;
+  otp: string;
+  subject: string;
+}) => {
+  await sendEmail({
+    to: options.email,
+    subject: options.subject,
+    templateName: "otp",
+    templateData: {
+      name: options.name,
+      otp: options.otp,
+      expiryMinutes: 3,
+      appName: "OpsCore",
+    },
+    text: `Your OTP is ${options.otp}. It expires in 3 minutes.`,
+  });
+};
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
@@ -20,7 +40,6 @@ export const auth = betterAuth({
     google: {
       clientId: envVars.GOOGLE_CLIENT_ID,
       clientSecret: envVars.GOOGLE_CLIENT_SECRET,
-
       mapProfileToUser: () => ({
         systemRole: SystemRole.USER,
         isActive: true,
@@ -70,45 +89,37 @@ export const auth = betterAuth({
         try {
           const user = await prisma.user.findUnique({
             where: { email },
+            select: {
+              name: true,
+              emailVerified: true,
+              systemRole: true,
+            },
           });
 
           if (!user) {
-            console.error(`User with email - ${email} not found. Cannot send verification OTP.`);
+            console.error(`User not found for OTP email: ${email}`);
             return;
           }
 
           if (user.systemRole === SystemRole.SUPER_ADMIN) {
-            console.log(
-              `User with email ${email} is a super admin. Skipping sending verification OTP.`
-            );
             return;
           }
 
           if (type === "email-verification" && !user.emailVerified) {
-            await sendEmail({
-              to: email,
+            await sendOtpEmail({
+              email,
+              name: user.name,
+              otp,
               subject: "Verify your email with OpsCore",
-              templateName: "otp",
-              templateData: {
-                name: user.name,
-                otp,
-                expiryMinutes: 3,
-                appName: "OpsCore",
-              },
             });
           }
 
           if (type === "forget-password") {
-            await sendEmail({
-              to: email,
+            await sendOtpEmail({
+              email,
+              name: user.name,
+              otp,
               subject: "Password Reset OTP",
-              templateName: "otp",
-              templateData: {
-                name: user.name,
-                otp,
-                expiryMinutes: 3,
-                appName: "OpsCore",
-              },
             });
           }
         } catch (error) {

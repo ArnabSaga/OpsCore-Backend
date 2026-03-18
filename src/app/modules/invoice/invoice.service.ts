@@ -2,9 +2,11 @@ import { Request } from "express";
 import status from "http-status";
 import { Prisma } from "../../../generated/prisma/client";
 import { InvoiceStatus } from "../../../generated/prisma/enums";
+import { envVars } from "../../config/env";
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import { assertPlanFeatureEnabled, assertPlanLimitNotReached } from "../../utils/checkPlanLimit";
+import { sendEmail } from "../../utils/email";
 import {
   ICreateInvoicePayload,
   IInvoiceListItem,
@@ -12,14 +14,11 @@ import {
   IInvoiceResponse,
   IUpdateInvoicePayload,
 } from "./invoice.interface";
+import { formatMoney, generateInvoicePdf, mapInvoiceToEmailTemplateData } from "./invoice.utils";
 
 const isDbConnectionError = (error: unknown) => {
   const prismaError = error as { code?: string };
   return prismaError?.code === "P1001" || prismaError?.code === "P1002";
-};
-
-const toMoneyString = (value: Prisma.Decimal | number | string) => {
-  return new Prisma.Decimal(value).toFixed(2);
 };
 
 const normalizeCurrency = (currency?: string) => {
@@ -90,7 +89,6 @@ const getInvoiceSelect = {
     },
   },
   items: {
-    where: {},
     select: {
       id: true,
       workspaceId: true,
@@ -139,13 +137,15 @@ const getScopedInvoiceOrThrow = async (invoiceId: string, workspaceId: string) =
   return invoice;
 };
 
-const mapInvoiceResponse = (invoice: any): IInvoiceResponse => {
+const mapInvoiceResponse = (
+  invoice: Prisma.InvoiceGetPayload<{ select: typeof getInvoiceSelect }>
+): IInvoiceResponse => {
   return {
     id: invoice.id,
     workspaceId: invoice.workspaceId,
     createdByUserId: invoice.createdByUserId,
     invoiceNumber: invoice.invoiceNumber,
-    amount: toMoneyString(invoice.amount),
+    amount: formatMoney(invoice.amount),
     currency: invoice.currency,
     status: invoice.status,
     customerName: invoice.customerName,
@@ -164,14 +164,14 @@ const mapInvoiceResponse = (invoice: any): IInvoiceResponse => {
       email: invoice.createdByUser.email,
       image: invoice.createdByUser.image,
     },
-    items: invoice.items.map((item: any) => ({
+    items: invoice.items.map((item) => ({
       id: item.id,
       workspaceId: item.workspaceId,
       invoiceId: item.invoiceId,
       description: item.description,
       quantity: item.quantity,
-      unitPrice: toMoneyString(item.unitPrice),
-      lineTotal: toMoneyString(item.lineTotal),
+      unitPrice: formatMoney(item.unitPrice),
+      lineTotal: formatMoney(item.lineTotal),
       createdAt: item.createdAt,
     })),
   };
@@ -229,7 +229,7 @@ const getInvoices = async (
     if (query.overdue === "true") {
       andConditions.push({
         dueAt: { lt: new Date() },
-        status: { not: InvoiceStatus.PAID },
+        status: { notIn: [InvoiceStatus.PAID, InvoiceStatus.CANCELED] },
       });
     }
 
@@ -285,7 +285,7 @@ const getInvoices = async (
         workspaceId: invoice.workspaceId,
         createdByUserId: invoice.createdByUserId,
         invoiceNumber: invoice.invoiceNumber,
-        amount: toMoneyString(invoice.amount),
+        amount: formatMoney(invoice.amount),
         currency: invoice.currency,
         status: invoice.status,
         customerName: invoice.customerName,
@@ -369,8 +369,9 @@ const createInvoice = async (req: Request): Promise<IInvoiceResponse> => {
         });
 
         return mapInvoiceResponse(invoice);
-      } catch (error: any) {
-        if (error?.code === "P2002") {
+      } catch (error: unknown) {
+        const prismaError = error as { code?: string };
+        if (prismaError?.code === "P2002") {
           attempts += 1;
           continue;
         }
@@ -501,7 +502,7 @@ const updateInvoice = async (req: Request): Promise<IInvoiceResponse> => {
     });
 
     return mapInvoiceResponse(invoice);
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof AppError) throw error;
     if (isDbConnectionError(error)) {
       throw new AppError(status.SERVICE_UNAVAILABLE, "Database connection failed");
@@ -552,7 +553,7 @@ const sendInvoice = async (req: Request): Promise<IInvoiceResponse> => {
       throw new AppError(status.BAD_REQUEST, "Canceled invoices cannot be sent");
     }
 
-    const invoice = await prisma.invoice.update({
+    const updatedInvoice = await prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         ...(existingInvoice.issuedAt === null ? { issuedAt: new Date() } : {}),
@@ -561,7 +562,34 @@ const sendInvoice = async (req: Request): Promise<IInvoiceResponse> => {
       select: getInvoiceSelect,
     });
 
-    return mapInvoiceResponse(invoice);
+    const mappedInvoice = mapInvoiceResponse(updatedInvoice);
+
+    if (mappedInvoice.customerEmail) {
+      const pdfBuffer = await generateInvoicePdf(mappedInvoice);
+
+      await sendEmail({
+        to: mappedInvoice.customerEmail,
+        subject: `Invoice ${mappedInvoice.invoiceNumber} from OpsCore`,
+        templateName: "invoice",
+        templateData: mapInvoiceToEmailTemplateData(mappedInvoice, {
+          subject: `Invoice ${mappedInvoice.invoiceNumber} from OpsCore`,
+          supportEmail: envVars.EMAIL_SENDER.SMTP_FROM,
+          appName: "OpsCore",
+          actionUrl: undefined,
+          actionText: "View Invoice",
+        }),
+        attachments: [
+          {
+            filename: `${mappedInvoice.invoiceNumber}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ],
+        text: `Invoice ${mappedInvoice.invoiceNumber} for ${mappedInvoice.currency}${mappedInvoice.amount}`,
+      });
+    }
+
+    return mappedInvoice;
   } catch (error) {
     if (error instanceof AppError) throw error;
     if (isDbConnectionError(error)) {
