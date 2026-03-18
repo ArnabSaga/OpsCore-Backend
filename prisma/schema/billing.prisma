@@ -1,5 +1,5 @@
 model Invoice {
-  id              String        @id @default(uuid())
+  id              String        @id @default(uuid(7))
   workspaceId     String
   createdByUserId String
   invoiceNumber   String
@@ -10,8 +10,11 @@ model Invoice {
   customerEmail   String?
   notes           String?
   issuedAt        DateTime?
+  sentAt          DateTime?
   dueAt           DateTime?
   paidAt          DateTime?
+  canceledAt      DateTime?
+  deletedAt       DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -25,11 +28,12 @@ model Invoice {
   @@index([workspaceId, status])
   @@index([dueAt])
   @@index([createdAt])
+  @@index([deletedAt])
   @@map("invoices")
 }
 
 model InvoiceItem {
-  id          String  @id @default(uuid())
+  id          String  @id @default(uuid(7))
   workspaceId String
   invoiceId   String
   description String
