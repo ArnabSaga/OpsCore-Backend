@@ -8,23 +8,22 @@ import { workspaceContext } from "../../middlewares/workspaceContext";
 import { WorkspaceMemberController } from "./workspaceMember.controller";
 import { WorkspaceMemberValidation } from "./workspaceMember.validation";
 
-const router = Router();
+const router = Router({ mergeParams: true });
 
 router.use(requireAuth);
+router.use(validateRequest(WorkspaceMemberValidation.workspaceIdParamSchema));
+router.use(workspaceContext);
 
 router.get(
-  "/workspaces/:workspaceId/members",
-  validateRequest(WorkspaceMemberValidation.workspaceIdParamSchema),
-  workspaceContext,
+  "/",
   requireFeature("workspace.memberManagement"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   WorkspaceMemberController.getMembers
 );
 
 router.patch(
-  "/workspaces/:workspaceId/members/:memberId",
+  "/:memberId",
   validateRequest(WorkspaceMemberValidation.workspaceMemberParamsSchema),
-  workspaceContext,
   requireFeature("workspace.advancedPermissions"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   validateRequest(WorkspaceMemberValidation.updateWorkspaceMemberSchema),
@@ -32,9 +31,8 @@ router.patch(
 );
 
 router.delete(
-  "/workspaces/:workspaceId/members/:memberId",
+  "/:memberId",
   validateRequest(WorkspaceMemberValidation.workspaceMemberParamsSchema),
-  workspaceContext,
   requireFeature("workspace.advancedPermissions"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   WorkspaceMemberController.removeMember

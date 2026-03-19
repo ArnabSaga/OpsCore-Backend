@@ -15,7 +15,6 @@ import {
   IUpdateTaskPayload,
 } from "./task.interface";
 
-
 const getProjectOrThrow = async (projectId: string, workspaceId: string) => {
   const project = await prisma.project.findFirst({
     where: {
@@ -84,10 +83,7 @@ const getScopedTaskOrThrow = async (req: Request, taskId: string, workspaceId: s
       project: { deletedAt: null },
       ...(req.workspaceRole === "MEMBER"
         ? {
-            OR: [
-              { assignedToUserId: req.user!.id },
-              { createdByUserId: req.user!.id },
-            ],
+            assignedToUserId: req.user!.id,
           }
         : {}),
     },
@@ -247,7 +243,7 @@ const getTasks = async (
 
     if (req.workspaceRole === "MEMBER") {
       andConditions.push({
-        OR: [{ assignedToUserId: req.user!.id }, { createdByUserId: req.user!.id }],
+        assignedToUserId: req.user!.id,
       });
     }
 
@@ -438,6 +434,12 @@ const getTask = async (req: Request): Promise<ITaskResponse> => {
         id: taskId,
         workspaceId,
         deletedAt: null,
+        project: { deletedAt: null },
+        ...(req.workspaceRole === "MEMBER"
+          ? {
+              assignedToUserId: req.user!.id,
+            }
+          : {}),
       },
       select: getTaskSelect,
     });
@@ -446,7 +448,17 @@ const getTask = async (req: Request): Promise<ITaskResponse> => {
       throw new AppError(status.NOT_FOUND, "Task not found");
     }
 
-    return task;
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      ...task,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch task");

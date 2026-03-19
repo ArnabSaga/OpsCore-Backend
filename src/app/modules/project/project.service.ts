@@ -20,7 +20,6 @@ import {
   IUpdateProjectPayload,
 } from "./project.interface";
 
-
 const buildProjectBaseWhere = (workspaceId: string, includeArchived = false) => {
   return {
     workspaceId,
@@ -215,7 +214,6 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create project");
   }
 };
@@ -232,6 +230,15 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
         id: projectId,
         workspaceId,
         deletedAt: null,
+        ...(req.workspaceRole === "MEMBER"
+          ? {
+              members: {
+                some: {
+                  userId: req.user!.id,
+                },
+              },
+            }
+          : {}),
       },
       include: {
         createdByUser: {
@@ -268,7 +275,17 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
       throw new AppError(status.NOT_FOUND, "Project not found");
     }
 
-    return project;
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      ...project,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project");
@@ -366,7 +383,6 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update project");
   }
 };
@@ -396,7 +412,6 @@ const deleteProject = async (req: Request): Promise<void> => {
   } catch (error: any) {
     if (error instanceof AppError) throw error;
 
-
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete project");
   }
 };
@@ -424,6 +439,9 @@ const getProjectTasks = async (
       workspaceId,
       projectId,
       deletedAt: null,
+      project: {
+        deletedAt: null,
+      },
     };
 
     if (query.status) {
@@ -580,7 +598,6 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
     };
   } catch (error: any) {
     if (error instanceof AppError) throw error;
-
 
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to assign project members");
   }

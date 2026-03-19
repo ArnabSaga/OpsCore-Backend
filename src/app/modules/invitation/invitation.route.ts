@@ -8,48 +8,51 @@ import validateRequest from "../../middlewares/validateRequest";
 import { InvitationController } from "./invitation.controller";
 import { InvitationValidation } from "./invitation.validation";
 
-const router = Router();
+const workspaceInvitationRouter = Router({ mergeParams: true });
+const invitationActionRouter = Router();
 
-router.use(requireAuth);
+workspaceInvitationRouter.use(requireAuth);
+workspaceInvitationRouter.use(
+  validateRequest(InvitationValidation.workspaceInvitationParamsSchema)
+);
+workspaceInvitationRouter.use(workspaceContext);
 
-router.get(
-  "/workspaces/:workspaceId/invitations",
-  validateRequest(InvitationValidation.workspaceInvitationParamsSchema),
-  workspaceContext,
+workspaceInvitationRouter.get(
+  "/",
   requireFeature("workspace.memberManagement"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   InvitationController.getInvitations
 );
 
-router.post(
-  "/workspaces/:workspaceId/invitations",
-  validateRequest(InvitationValidation.workspaceInvitationParamsSchema),
-  workspaceContext,
+workspaceInvitationRouter.post(
+  "/",
   requireFeature("workspace.memberManagement"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   validateRequest(InvitationValidation.createInvitationSchema),
   InvitationController.createInvitation
 );
 
-router.delete(
-  "/workspaces/:workspaceId/invitations/:invitationId",
+workspaceInvitationRouter.delete(
+  "/:invitationId",
   validateRequest(InvitationValidation.invitationIdParamsSchema),
-  workspaceContext,
   requireFeature("workspace.memberManagement"),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   InvitationController.cancelInvitation
 );
 
-router.post(
+invitationActionRouter.use(requireAuth);
+
+invitationActionRouter.post(
   "/:token/accept",
   validateRequest(InvitationValidation.invitationTokenParamsSchema),
   InvitationController.acceptInvitation
 );
 
-router.post(
+invitationActionRouter.post(
   "/:token/decline",
   validateRequest(InvitationValidation.invitationTokenParamsSchema),
   InvitationController.declineInvitation
 );
 
-export const InvitationRoutes = router;
+export const InvitationWorkspaceRoutes = workspaceInvitationRouter;
+export const InvitationActionRoutes = invitationActionRouter;
