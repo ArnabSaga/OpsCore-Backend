@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { Prisma } from "../../generated/prisma/client";
 import { envVars } from "../config/env";
 import AppError from "../errors/AppError";
+import { destroyCloudinaryAssetByUrl } from "../config/cloudinary.config";
 import {
   handlePrismaClientInitializationError,
   handlePrismaClientKnownRequestError,
@@ -13,7 +14,7 @@ import {
 } from "../errors/handlePrismaErrors";
 import { TErrorSources } from "../interfaces/error.interface";
 
-const globalErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (envVars.NODE_ENV === "development") {
     if (err instanceof ZodError) {
       console.error(`[Zod Validation Error]:`, err.issues);
@@ -22,6 +23,10 @@ const globalErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     } else {
       console.error(err);
     }
+  }
+
+  if (req.file && req.file.path) {
+    destroyCloudinaryAssetByUrl(req.file.path).catch(console.error);
   }
 
   let statusCode: number = status.INTERNAL_SERVER_ERROR;

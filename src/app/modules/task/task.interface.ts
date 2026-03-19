@@ -31,8 +31,8 @@ export interface ITaskQuery {
   overdue?: "true" | "false";
   dueFrom?: string;
   dueTo?: string;
-  page?: string;
-  limit?: string;
+  page?: string | number;
+  limit?: string | number;
   sortBy?: "createdAt" | "updatedAt" | "dueDate" | "title" | "status" | "priority";
   sortOrder?: "asc" | "desc";
 }
@@ -116,4 +116,76 @@ export interface ITaskResponse {
     attachments: number;
   };
   planMeta?: ITaskPlanMeta;
+}
+
+export interface ITaskCommentQuery {
+  page?: string | number;
+  limit?: string | number;
+}
+
+export interface ICreateTaskCommentPayload {
+  body: string;
+}
+
+export interface IUpdateTaskCommentPayload {
+  body: string;
+}
+
+export interface ITaskCommentResponse {
+  id: string;
+  workspaceId: string;
+  taskId: string;
+  userId: string;
+  body: string;
+  createdAt: Date;
+  updatedAt: Date;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    image: string | null;
+  };
+}
+
+export interface ITaskAttachmentQuery {
+  page?: string | number;
+  limit?: string | number;
+}
+
+export interface ITaskAttachmentResponse {
+  id: string;
+  workspaceId: string;
+  taskId: string;
+  uploadedById: string;
+  fileName: string;
+  fileUrl: string;
+  mimeType: string | null;
+  fileSize: number | null;
+  createdAt: Date;
+  uploadedBy: {
+    id: string;
+    name: string;
+    email: string;
+    image: string | null;
+  };
+}
+
+export interface IPaginatedTaskCommentResponse {
+  data: ITaskCommentResponse[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface IPaginatedTaskAttachmentResponse {
+  data: ITaskAttachmentResponse[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }

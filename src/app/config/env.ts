@@ -29,6 +29,13 @@ interface EnvConfig {
     // STRIPE_PRICE_ENTERPRISE_MONTHLY: string;
     // STRIPE_PRICE_ENTERPRISE_YEARLY: string;
   };
+  CLOUDINARY: {
+    CLOUDINARY_CLOUD_NAME: string;
+    CLOUDINARY_API_KEY: string;
+    CLOUDINARY_API_SECRET: string;
+    TASK_ATTACHMENT_FOLDER: string;
+    USER_PROFILE_FOLDER: string;
+  };
   SUPER_ADMIN_NAME: string;
   SUPER_ADMIN_EMAIL: string;
   SUPER_ADMIN_PASSWORD: string;
@@ -56,6 +63,11 @@ const loadEnvVariables = (): EnvConfig => {
     // "STRIPE_PRICE_PRO_YEARLY",
     // "STRIPE_PRICE_ENTERPRISE_MONTHLY",
     // "STRIPE_PRICE_ENTERPRISE_YEARLY",
+    "CLOUDINARY_CLOUD_NAME",
+    "CLOUDINARY_API_KEY",
+    "CLOUDINARY_API_SECRET",
+    "TASK_ATTACHMENT_FOLDER",
+    "USER_PROFILE_FOLDER",
     "SUPER_ADMIN_NAME",
     "SUPER_ADMIN_EMAIL",
     "SUPER_ADMIN_PASSWORD",
@@ -94,6 +106,13 @@ const loadEnvVariables = (): EnvConfig => {
       // STRIPE_PRICE_PRO_YEARLY: process.env.STRIPE_PRICE_PRO_YEARLY as string,
       // STRIPE_PRICE_ENTERPRISE_MONTHLY: process.env.STRIPE_PRICE_ENTERPRISE_MONTHLY as string,
       // STRIPE_PRICE_ENTERPRISE_YEARLY: process.env.STRIPE_PRICE_ENTERPRISE_YEARLY as string,
+    },
+    CLOUDINARY: {
+      CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME as string,
+      CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY as string,
+      CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET as string,
+      TASK_ATTACHMENT_FOLDER: process.env.TASK_ATTACHMENT_FOLDER as string,
+      USER_PROFILE_FOLDER: process.env.USER_PROFILE_FOLDER as string,
     },
     SUPER_ADMIN_NAME: process.env.SUPER_ADMIN_NAME as string,
     SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL as string,

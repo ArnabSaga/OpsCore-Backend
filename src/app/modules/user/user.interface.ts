@@ -6,7 +6,7 @@ import {
 
 export interface IUpdateProfilePayload {
   name?: string;
-  image?: string;
+  removeImage?: "true" | "false";
 }
 
 export interface IProfileWorkspaceMember {

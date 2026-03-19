@@ -4,6 +4,7 @@ import AppError from "../../errors/AppError";
 import { WorkspaceMemberStatus } from "../../../generated/prisma/enums";
 import { prisma } from "../../lib/prisma";
 import { IProfileResponse, IUpdateProfilePayload } from "./user.interface";
+import { destroyCloudinaryAssetByUrl } from "../../config/cloudinary.config";
 
 const profileSelect = {
   id: true,
@@ -60,13 +61,38 @@ const getProfile = async (req: Request): Promise<IProfileResponse> => {
 const updateProfile = async (req: Request): Promise<IProfileResponse> => {
   try {
     const userId = req.user!.id;
-    const { name, image } = req.body as IUpdateProfilePayload;
+    const { name, removeImage } = req.body as IUpdateProfilePayload;
+    const file = req.file;
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { image: true },
+    });
+
+    if (!existingUser) {
+      throw new AppError(status.NOT_FOUND, "User not found");
+    }
+
+    let imageUrl: string | null | undefined = undefined;
+
+    if (file && file.path) {
+      imageUrl = file.path;
+
+      if (existingUser.image) {
+        destroyCloudinaryAssetByUrl(existingUser.image).catch(console.error);
+      }
+    } else if (removeImage === "true") {
+      imageUrl = null;
+      if (existingUser.image) {
+        destroyCloudinaryAssetByUrl(existingUser.image).catch(console.error);
+      }
+    }
 
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
         ...(name !== undefined && { name }),
-        ...(image !== undefined && { image }),
+        ...(imageUrl !== undefined && { image: imageUrl }),
       },
       select: profileSelect,
     });

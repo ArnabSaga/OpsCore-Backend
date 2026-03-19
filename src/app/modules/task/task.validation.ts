@@ -1,8 +1,27 @@
 import { z } from "zod";
 
+const paginationQueryShape = {
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+};
+
 const taskIdParamSchema = z.object({
   params: z.object({
     taskId: z.string().uuid("Task ID must be a valid UUID"),
+  }),
+});
+
+const taskCommentParamsSchema = z.object({
+  params: z.object({
+    taskId: z.string().uuid("Task ID must be a valid UUID"),
+    commentId: z.string().uuid("Comment ID must be a valid UUID"),
+  }),
+});
+
+const taskAttachmentParamsSchema = z.object({
+  params: z.object({
+    taskId: z.string().uuid("Task ID must be a valid UUID"),
+    attachmentId: z.string().uuid("Attachment ID must be a valid UUID"),
   }),
 });
 
@@ -68,8 +87,7 @@ const getTasksQuerySchema = z.object({
       overdue: z.enum(["true", "false"]).optional(),
       dueFrom: z.string().datetime().optional(),
       dueTo: z.string().datetime().optional(),
-      page: z.coerce.number().int().min(1).optional(),
-      limit: z.coerce.number().int().min(1).max(100).optional(),
+      ...paginationQueryShape,
       sortBy: z
         .enum(["createdAt", "updatedAt", "dueDate", "title", "status", "priority"])
         .optional(),
@@ -91,9 +109,47 @@ const getTasksQuerySchema = z.object({
     }),
 });
 
+const getTaskCommentsQuerySchema = z.object({
+  query: z.object({
+    ...paginationQueryShape,
+  }),
+});
+
+const getTaskAttachmentsQuerySchema = z.object({
+  query: z.object({
+    ...paginationQueryShape,
+  }),
+});
+
+const createTaskCommentSchema = z.object({
+  body: z.object({
+    body: z
+      .string()
+      .trim()
+      .min(1, "Comment body is required")
+      .max(5000, "Comment body cannot exceed 5000 characters"),
+  }),
+});
+
+const updateTaskCommentSchema = z.object({
+  body: z.object({
+    body: z
+      .string()
+      .trim()
+      .min(1, "Comment body is required")
+      .max(5000, "Comment body cannot exceed 5000 characters"),
+  }),
+});
+
 export const TaskValidation = {
   taskIdParamSchema,
+  taskCommentParamsSchema,
+  taskAttachmentParamsSchema,
   createTaskSchema,
   updateTaskSchema,
   getTasksQuerySchema,
+  getTaskCommentsQuerySchema,
+  getTaskAttachmentsQuerySchema,
+  createTaskCommentSchema,
+  updateTaskCommentSchema,
 };

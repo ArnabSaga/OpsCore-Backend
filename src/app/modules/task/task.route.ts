@@ -3,6 +3,7 @@ import { WorkspaceMemberRole } from "../../../generated/prisma/enums";
 import { requireAuth } from "../../middlewares/requireAuth";
 import { requireFeature } from "../../middlewares/requireFeature";
 import { requireRole } from "../../middlewares/requireRole";
+import { uploadTaskAttachment } from "../../middlewares/uploadTaskAttachment";
 import validateRequest from "../../middlewares/validateRequest";
 import { workspaceContext } from "../../middlewares/workspaceContext";
 import { TaskController } from "./task.controller";
@@ -37,6 +38,58 @@ router.delete(
   validateRequest(TaskValidation.taskIdParamSchema),
   requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   TaskController.deleteTask
+);
+
+router.get(
+  "/:taskId/comments",
+  validateRequest(TaskValidation.taskIdParamSchema),
+  validateRequest(TaskValidation.getTaskCommentsQuerySchema),
+  TaskController.getTaskComments
+);
+
+router.post(
+  "/:taskId/comments",
+  requireFeature("tasks.comments"),
+  validateRequest(TaskValidation.taskIdParamSchema),
+  validateRequest(TaskValidation.createTaskCommentSchema),
+  TaskController.createTaskComment
+);
+
+router.patch(
+  "/:taskId/comments/:commentId",
+  requireFeature("tasks.comments"),
+  validateRequest(TaskValidation.taskCommentParamsSchema),
+  validateRequest(TaskValidation.updateTaskCommentSchema),
+  TaskController.updateTaskComment
+);
+
+router.delete(
+  "/:taskId/comments/:commentId",
+  requireFeature("tasks.comments"),
+  validateRequest(TaskValidation.taskCommentParamsSchema),
+  TaskController.deleteTaskComment
+);
+
+router.get(
+  "/:taskId/attachments",
+  validateRequest(TaskValidation.taskIdParamSchema),
+  validateRequest(TaskValidation.getTaskAttachmentsQuerySchema),
+  TaskController.getTaskAttachments
+);
+
+router.post(
+  "/:taskId/attachments",
+  requireFeature("tasks.attachments"),
+  validateRequest(TaskValidation.taskIdParamSchema),
+  uploadTaskAttachment,
+  TaskController.createTaskAttachment
+);
+
+router.delete(
+  "/:taskId/attachments/:attachmentId",
+  requireFeature("tasks.attachments"),
+  validateRequest(TaskValidation.taskAttachmentParamsSchema),
+  TaskController.deleteTaskAttachment
 );
 
 export const TaskRoutes = router;

@@ -1,6 +1,8 @@
 import { Request } from "express";
 import status from "http-status";
+import { envVars } from "../../config/env";
 import AppError from "../../errors/AppError";
+import { destroyCloudinaryAssetByUrl } from "../../config/cloudinary.config";
 import { prisma } from "../../lib/prisma";
 import {
   assertPlanFeatureEnabled,
@@ -8,10 +10,18 @@ import {
   resolveWorkspacePlanContext,
 } from "../../utils/checkPlanLimit";
 import {
+  ICreateTaskCommentPayload,
   ICreateTaskPayload,
+  IPaginatedTaskAttachmentResponse,
+  IPaginatedTaskCommentResponse,
+  ITaskAttachmentQuery,
+  ITaskAttachmentResponse,
+  ITaskCommentQuery,
+  ITaskCommentResponse,
   ITaskListItem,
   ITaskQuery,
   ITaskResponse,
+  IUpdateTaskCommentPayload,
   IUpdateTaskPayload,
 } from "./task.interface";
 
@@ -74,6 +84,14 @@ const assertAssignableUser = async (userId: string, workspaceId: string) => {
   }
 };
 
+const buildMemberTaskAccessWhere = (req: Request) => {
+  if (req.workspaceRole !== "MEMBER") return {};
+
+  return {
+    OR: [{ assignedToUserId: req.user!.id }, { createdByUserId: req.user!.id }],
+  };
+};
+
 const getScopedTaskOrThrow = async (req: Request, taskId: string, workspaceId: string) => {
   const task = await prisma.task.findFirst({
     where: {
@@ -81,11 +99,7 @@ const getScopedTaskOrThrow = async (req: Request, taskId: string, workspaceId: s
       workspaceId,
       deletedAt: null,
       project: { deletedAt: null },
-      ...(req.workspaceRole === "MEMBER"
-        ? {
-            assignedToUserId: req.user!.id,
-          }
-        : {}),
+      ...buildMemberTaskAccessWhere(req),
     },
     select: {
       id: true,
@@ -110,6 +124,106 @@ const getScopedTaskOrThrow = async (req: Request, taskId: string, workspaceId: s
 
   if (!task) {
     throw new AppError(status.NOT_FOUND, "Task not found");
+  }
+
+  return task;
+};
+
+const getScopedTaskCommentOrThrow = async (
+  req: Request,
+  taskId: string,
+  commentId: string,
+  workspaceId: string
+) => {
+  const comment = await prisma.taskComment.findFirst({
+    where: {
+      id: commentId,
+      taskId,
+      workspaceId,
+      task: {
+        deletedAt: null,
+        project: { deletedAt: null },
+        ...buildMemberTaskAccessWhere(req),
+      },
+    },
+    select: {
+      id: true,
+      taskId: true,
+      workspaceId: true,
+      userId: true,
+      task: {
+        select: {
+          id: true,
+          project: {
+            select: {
+              archivedAt: true,
+              status: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!comment) {
+    throw new AppError(status.NOT_FOUND, "Task comment not found");
+  }
+
+  return comment;
+};
+
+const getScopedTaskAttachmentOrThrow = async (
+  req: Request,
+  taskId: string,
+  attachmentId: string,
+  workspaceId: string
+) => {
+  const attachment = await prisma.taskAttachment.findFirst({
+    where: {
+      id: attachmentId,
+      taskId,
+      workspaceId,
+      task: {
+        deletedAt: null,
+        project: { deletedAt: null },
+        ...buildMemberTaskAccessWhere(req),
+      },
+    },
+    select: {
+      id: true,
+      taskId: true,
+      workspaceId: true,
+      uploadedById: true,
+      fileUrl: true,
+      task: {
+        select: {
+          id: true,
+          project: {
+            select: {
+              archivedAt: true,
+              status: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!attachment) {
+    throw new AppError(status.NOT_FOUND, "Task attachment not found");
+  }
+
+  return attachment;
+};
+
+const assertTaskWriteAllowed = async (req: Request, taskId: string, workspaceId: string) => {
+  const task = await getScopedTaskOrThrow(req, taskId, workspaceId);
+
+  if (task.project.archivedAt || task.project.status === "ARCHIVED") {
+    throw new AppError(
+      status.BAD_REQUEST,
+      "Archived project tasks cannot be modified with comments or attachments"
+    );
   }
 
   return task;
@@ -160,20 +274,58 @@ const getTaskSelect = {
   },
 } as const;
 
-const hasAdvancedTaskFilters = (query: ITaskQuery) => {
-  return Boolean(
-    query.searchTerm ||
-    query.assignedToUserId ||
-    query.overdue === "true" ||
-    query.dueFrom ||
-    query.dueTo ||
-    query.sortBy === "priority" ||
-    query.sortBy === "dueDate"
-  );
-};
+const taskCommentSelect = {
+  id: true,
+  workspaceId: true,
+  taskId: true,
+  userId: true,
+  body: true,
+  createdAt: true,
+  updatedAt: true,
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+    },
+  },
+} as const;
+
+const taskAttachmentSelect = {
+  id: true,
+  workspaceId: true,
+  taskId: true,
+  uploadedById: true,
+  fileName: true,
+  fileUrl: true,
+  mimeType: true,
+  fileSize: true,
+  createdAt: true,
+  uploadedBy: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+    },
+  },
+} as const;
 
 const assertTaskQueryAccess = async (workspaceId: string, query: ITaskQuery) => {
-  if (hasAdvancedTaskFilters(query)) {
+  const usesAdvancedFilters = Boolean(
+    query.searchTerm ||
+    query.projectId ||
+    query.assignedToUserId ||
+    query.status ||
+    query.priority ||
+    query.overdue ||
+    query.dueFrom ||
+    query.dueTo ||
+    query.sortBy
+  );
+
+  if (usesAdvancedFilters) {
     await assertPlanFeatureEnabled(workspaceId, "tasks.advancedFilters");
   }
 };
@@ -181,13 +333,16 @@ const assertTaskQueryAccess = async (workspaceId: string, query: ITaskQuery) => 
 const assertTaskUpdatePermission = (
   req: Request,
   payload: IUpdateTaskPayload,
-  existingTask: Awaited<ReturnType<typeof getScopedTaskOrThrow>>
+  existingTask: {
+    assignedToUserId: string | null;
+    createdByUserId: string;
+    project: { archivedAt: Date | null; status: string };
+  }
 ) => {
   const workspaceRole = req.workspaceRole;
-  const currentUserId = req.user!.id;
 
   if (!workspaceRole) {
-    throw new AppError(status.FORBIDDEN, "Workspace role is missing from request context");
+    throw new AppError(status.FORBIDDEN, "Workspace role is missing");
   }
 
   if (workspaceRole === "OWNER" || workspaceRole === "ADMIN") {
@@ -198,19 +353,29 @@ const assertTaskUpdatePermission = (
     throw new AppError(status.FORBIDDEN, "You do not have permission to update this task");
   }
 
-  if (existingTask.assignedToUserId !== currentUserId) {
-    throw new AppError(status.FORBIDDEN, "Members can only update tasks assigned to themselves");
+  const isAssignee = existingTask.assignedToUserId === req.user!.id;
+  const isCreator = existingTask.createdByUserId === req.user!.id;
+
+  if (!isAssignee && !isCreator) {
+    throw new AppError(status.FORBIDDEN, "You do not have permission to update this task");
   }
 
-  const memberAllowedFields = new Set(["status", "description"]);
-  const attemptedFields = Object.keys(payload);
-
-  const hasForbiddenField = attemptedFields.some((field) => !memberAllowedFields.has(field));
-
-  if (hasForbiddenField) {
+  if (payload.projectId !== undefined || payload.assignedToUserId !== undefined) {
     throw new AppError(
       status.FORBIDDEN,
-      "Members can only update task status and description on their assigned tasks"
+      "Members can update only task progress fields, not assignment or project linkage"
+    );
+  }
+
+  const allowedKeys = ["title", "description", "status", "priority", "dueDate"] as const;
+  const disallowedKeys = Object.keys(payload).filter(
+    (key) => !allowedKeys.includes(key as (typeof allowedKeys)[number])
+  );
+
+  if (disallowedKeys.length > 0) {
+    throw new AppError(
+      status.FORBIDDEN,
+      "Members can update only task progress fields, not assignment or project linkage"
     );
   }
 };
@@ -242,9 +407,7 @@ const getTasks = async (
     const andConditions: any[] = [];
 
     if (req.workspaceRole === "MEMBER") {
-      andConditions.push({
-        assignedToUserId: req.user!.id,
-      });
+      andConditions.push(buildMemberTaskAccessWhere(req));
     }
 
     if (query.searchTerm) {
@@ -278,14 +441,10 @@ const getTasks = async (
     }
 
     if (query.overdue === "true") {
-      andConditions.push({
-        dueDate: { lt: new Date() },
-      });
+      andConditions.push({ dueDate: { lt: new Date() } });
 
       if (!query.status) {
-        andConditions.push({
-          status: { not: "DONE" },
-        });
+        andConditions.push({ status: { not: "DONE" } });
       }
     }
 
@@ -308,49 +467,7 @@ const getTasks = async (
         skip,
         take: limit,
         orderBy: { [sortBy]: sortOrder },
-        select: {
-          id: true,
-          workspaceId: true,
-          projectId: true,
-          assignedToUserId: true,
-          createdByUserId: true,
-          title: true,
-          description: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          createdAt: true,
-          updatedAt: true,
-          project: {
-            select: {
-              id: true,
-              name: true,
-              status: true,
-            },
-          },
-          assignedToUser: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-          createdByUser: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-          _count: {
-            select: {
-              comments: true,
-              attachments: true,
-            },
-          },
-        },
+        select: getTaskSelect,
       }),
       prisma.task.count({ where }),
     ]);
@@ -435,11 +552,7 @@ const getTask = async (req: Request): Promise<ITaskResponse> => {
         workspaceId,
         deletedAt: null,
         project: { deletedAt: null },
-        ...(req.workspaceRole === "MEMBER"
-          ? {
-              assignedToUserId: req.user!.id,
-            }
-          : {}),
+        ...buildMemberTaskAccessWhere(req),
       },
       select: getTaskSelect,
     });
@@ -507,7 +620,17 @@ const updateTask = async (req: Request): Promise<ITaskResponse> => {
       select: getTaskSelect,
     });
 
-    return task;
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      ...task,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update task");
@@ -525,14 +648,320 @@ const deleteTask = async (req: Request): Promise<void> => {
       throw new AppError(status.FORBIDDEN, "Members do not have permission to delete tasks");
     }
 
-    await prisma.task.update({
-      where: { id: taskId },
-      data: { deletedAt: new Date() },
+    const attachments = await prisma.taskAttachment.findMany({
+      where: {
+        taskId,
+        workspaceId,
+      },
+      select: {
+        id: true,
+        fileUrl: true,
+      },
     });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.taskComment.deleteMany({
+        where: {
+          taskId,
+          workspaceId,
+        },
+      });
+
+      await tx.taskAttachment.deleteMany({
+        where: {
+          taskId,
+          workspaceId,
+        },
+      });
+
+      await tx.task.update({
+        where: { id: taskId },
+        data: { deletedAt: new Date() },
+      });
+    });
+
+    await Promise.allSettled(
+      attachments.map((attachment) => destroyCloudinaryAssetByUrl(attachment.fileUrl))
+    );
   } catch (error) {
     if (error instanceof AppError) throw error;
 
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete task");
+  }
+};
+
+const getTaskComments = async (req: Request): Promise<IPaginatedTaskCommentResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const query = req.query as unknown as ITaskCommentQuery;
+
+    await getScopedTaskOrThrow(req, taskId, workspaceId);
+
+    const page = Math.max(Number(query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const where = {
+      taskId,
+      workspaceId,
+      task: {
+        deletedAt: null,
+        project: { deletedAt: null },
+        ...buildMemberTaskAccessWhere(req),
+      },
+    };
+
+    const [comments, total] = await Promise.all([
+      prisma.taskComment.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "asc" },
+        select: taskCommentSelect,
+      }),
+      prisma.taskComment.count({ where }),
+    ]);
+
+    return {
+      data: comments,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch task comments");
+  }
+};
+
+const createTaskComment = async (req: Request): Promise<ITaskCommentResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const userId = req.user!.id;
+    const payload = req.body as ICreateTaskCommentPayload;
+
+    await assertPlanFeatureEnabled(workspaceId, "tasks.comments");
+    await assertTaskWriteAllowed(req, taskId, workspaceId);
+    await assertPlanLimitNotReached({
+      workspaceId,
+      limitKey: "taskCommentsPerTask",
+      resourceId: taskId,
+      incrementBy: 1,
+      customMessage:
+        'You have reached the "taskCommentsPerTask" limit for this task on your current plan.',
+    });
+
+    const comment = await prisma.taskComment.create({
+      data: {
+        workspaceId,
+        taskId,
+        userId,
+        body: payload.body.trim(),
+      },
+      select: taskCommentSelect,
+    });
+
+    return comment;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to create task comment");
+  }
+};
+
+const updateTaskComment = async (req: Request): Promise<ITaskCommentResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const commentId = req.params.commentId as string;
+    const userId = req.user!.id;
+    const payload = req.body as IUpdateTaskCommentPayload;
+
+    const existingComment = await getScopedTaskCommentOrThrow(req, taskId, commentId, workspaceId);
+
+    if (req.workspaceRole === "MEMBER" && existingComment.userId !== userId) {
+      throw new AppError(status.FORBIDDEN, "Members can update only their own task comments");
+    }
+
+    if (
+      existingComment.task.project.archivedAt ||
+      existingComment.task.project.status === "ARCHIVED"
+    ) {
+      throw new AppError(
+        status.BAD_REQUEST,
+        "Comments on archived project tasks cannot be updated"
+      );
+    }
+
+    const comment = await prisma.taskComment.update({
+      where: { id: commentId },
+      data: {
+        body: payload.body.trim(),
+      },
+      select: taskCommentSelect,
+    });
+
+    return comment;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update task comment");
+  }
+};
+
+const deleteTaskComment = async (req: Request): Promise<void> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const commentId = req.params.commentId as string;
+    const userId = req.user!.id;
+
+    const existingComment = await getScopedTaskCommentOrThrow(req, taskId, commentId, workspaceId);
+
+    if (req.workspaceRole === "MEMBER" && existingComment.userId !== userId) {
+      throw new AppError(status.FORBIDDEN, "Members can delete only their own task comments");
+    }
+
+    await prisma.taskComment.delete({
+      where: { id: commentId },
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete task comment");
+  }
+};
+
+const getTaskAttachments = async (req: Request): Promise<IPaginatedTaskAttachmentResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const query = req.query as unknown as ITaskAttachmentQuery;
+
+    await getScopedTaskOrThrow(req, taskId, workspaceId);
+
+    const page = Math.max(Number(query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const where = {
+      taskId,
+      workspaceId,
+      task: {
+        deletedAt: null,
+        project: { deletedAt: null },
+        ...buildMemberTaskAccessWhere(req),
+      },
+    };
+
+    const [attachments, total] = await Promise.all([
+      prisma.taskAttachment.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        select: taskAttachmentSelect,
+      }),
+      prisma.taskAttachment.count({ where }),
+    ]);
+
+    return {
+      data: attachments,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch task attachments");
+  }
+};
+
+const createTaskAttachment = async (req: Request): Promise<ITaskAttachmentResponse> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const uploadedById = req.user!.id;
+    const file = req.file;
+
+    await assertPlanFeatureEnabled(workspaceId, "tasks.attachments");
+    await assertTaskWriteAllowed(req, taskId, workspaceId);
+
+    if (!file) {
+      throw new AppError(status.BAD_REQUEST, "Attachment file is required");
+    }
+
+    await assertPlanLimitNotReached({
+      workspaceId,
+      limitKey: "taskAttachmentsPerTask",
+      resourceId: taskId,
+      incrementBy: 1,
+      customMessage:
+        'You have reached the "taskAttachmentsPerTask" limit for this task on your current plan.',
+    });
+
+    const fileSizeMb = Math.max(Math.ceil(file.size / (1024 * 1024)), 1);
+
+    await assertPlanLimitNotReached({
+      workspaceId,
+      limitKey: "storageMb",
+      incrementBy: fileSizeMb,
+      customMessage: "You do not have enough storage remaining on your current plan.",
+    });
+
+    const fileUrl = file.path;
+
+    const attachment = await prisma.taskAttachment.create({
+      data: {
+        workspaceId,
+        taskId,
+        uploadedById,
+        fileName: file.originalname,
+        fileUrl: fileUrl,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+      },
+      select: taskAttachmentSelect,
+    });
+
+    return attachment;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to upload task attachment");
+  }
+};
+
+const deleteTaskAttachment = async (req: Request): Promise<void> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const taskId = req.params.taskId as string;
+    const attachmentId = req.params.attachmentId as string;
+    const userId = req.user!.id;
+
+    const existingAttachment = await getScopedTaskAttachmentOrThrow(
+      req,
+      taskId,
+      attachmentId,
+      workspaceId
+    );
+
+    if (req.workspaceRole === "MEMBER" && existingAttachment.uploadedById !== userId) {
+      throw new AppError(status.FORBIDDEN, "Members can delete only their own task attachments");
+    }
+
+    await prisma.taskAttachment.delete({
+      where: { id: attachmentId },
+    });
+
+    await destroyCloudinaryAssetByUrl(existingAttachment.fileUrl).catch(() => undefined);
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete task attachment");
   }
 };
 
@@ -542,4 +971,11 @@ export const TaskService = {
   getTask,
   updateTask,
   deleteTask,
+  getTaskComments,
+  createTaskComment,
+  updateTaskComment,
+  deleteTaskComment,
+  getTaskAttachments,
+  createTaskAttachment,
+  deleteTaskAttachment,
 };
