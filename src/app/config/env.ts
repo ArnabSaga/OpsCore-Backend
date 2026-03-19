@@ -21,6 +21,14 @@ interface EnvConfig {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_CALLBACK_URL: string;
+  STRIPE: {
+    STRIPE_SECRET_KEY: string;
+    STRIPE_WEBHOOK_SECRET: string;
+    // STRIPE_PRICE_PRO_MONTHLY: string;
+    // STRIPE_PRICE_PRO_YEARLY: string;
+    // STRIPE_PRICE_ENTERPRISE_MONTHLY: string;
+    // STRIPE_PRICE_ENTERPRISE_YEARLY: string;
+  };
   SUPER_ADMIN_NAME: string;
   SUPER_ADMIN_EMAIL: string;
   SUPER_ADMIN_PASSWORD: string;
@@ -42,6 +50,12 @@ const loadEnvVariables = (): EnvConfig => {
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "GOOGLE_CALLBACK_URL",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    // "STRIPE_PRICE_PRO_MONTHLY",
+    // "STRIPE_PRICE_PRO_YEARLY",
+    // "STRIPE_PRICE_ENTERPRISE_MONTHLY",
+    // "STRIPE_PRICE_ENTERPRISE_YEARLY",
     "SUPER_ADMIN_NAME",
     "SUPER_ADMIN_EMAIL",
     "SUPER_ADMIN_PASSWORD",
@@ -73,6 +87,14 @@ const loadEnvVariables = (): EnvConfig => {
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID as string,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET as string,
     GOOGLE_CALLBACK_URL: process.env.GOOGLE_CALLBACK_URL as string,
+    STRIPE: {
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY as string,
+      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET as string,
+      // STRIPE_PRICE_PRO_MONTHLY: process.env.STRIPE_PRICE_PRO_MONTHLY as string,
+      // STRIPE_PRICE_PRO_YEARLY: process.env.STRIPE_PRICE_PRO_YEARLY as string,
+      // STRIPE_PRICE_ENTERPRISE_MONTHLY: process.env.STRIPE_PRICE_ENTERPRISE_MONTHLY as string,
+      // STRIPE_PRICE_ENTERPRISE_YEARLY: process.env.STRIPE_PRICE_ENTERPRISE_YEARLY as string,
+    },
     SUPER_ADMIN_NAME: process.env.SUPER_ADMIN_NAME as string,
     SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL as string,
     SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD as string,

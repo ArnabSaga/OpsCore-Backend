@@ -8,11 +8,16 @@ import { auth } from "./app/lib/auth";
 import globalErrorHandler from "./app/middlewares/globalErrorHandler";
 import notFound from "./app/middlewares/notFound";
 import router from "./app/routes";
+import { stripeWebhook } from './app/modules/billing/stripe.webhook';
 
 const app: Application = express();
 
 app.set("view engine", "ejs");
 app.set("views", path.resolve(process.cwd(), `src/app/templates/`));
+
+// Stripe webhook must receive the raw body before JSON parsing
+app.post("/api/v1/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhook);
+
 
 // parsers
 app.use(express.json());
