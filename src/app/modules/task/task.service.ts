@@ -75,12 +75,21 @@ const assertAssignableUser = async (userId: string, workspaceId: string) => {
   }
 };
 
-const getScopedTaskOrThrow = async (taskId: string, workspaceId: string) => {
+const getScopedTaskOrThrow = async (req: Request, taskId: string, workspaceId: string) => {
   const task = await prisma.task.findFirst({
     where: {
       id: taskId,
       workspaceId,
       deletedAt: null,
+      project: { deletedAt: null },
+      ...(req.workspaceRole === "MEMBER"
+        ? {
+            OR: [
+              { assignedToUserId: req.user!.id },
+              { createdByUserId: req.user!.id },
+            ],
+          }
+        : {}),
     },
     select: {
       id: true,
@@ -228,12 +237,19 @@ const getTasks = async (
     const sortBy = query.sortBy ?? "createdAt";
     const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
 
-    const where: Record<string, unknown> = {
+    const where: any = {
       workspaceId,
       deletedAt: null,
+      project: { deletedAt: null },
     };
 
-    const andConditions: Record<string, unknown>[] = [];
+    const andConditions: any[] = [];
+
+    if (req.workspaceRole === "MEMBER") {
+      andConditions.push({
+        OR: [{ assignedToUserId: req.user!.id }, { createdByUserId: req.user!.id }],
+      });
+    }
 
     if (query.searchTerm) {
       andConditions.push({
@@ -415,7 +431,7 @@ const getTask = async (req: Request): Promise<ITaskResponse> => {
     const workspaceId = req.workspaceId!;
     const taskId = req.params.taskId as string;
 
-    await getScopedTaskOrThrow(taskId, workspaceId);
+    await getScopedTaskOrThrow(req, taskId, workspaceId);
 
     const task = await prisma.task.findFirst({
       where: {
@@ -443,7 +459,7 @@ const updateTask = async (req: Request): Promise<ITaskResponse> => {
     const taskId = req.params.taskId as string;
     const payload = req.body as IUpdateTaskPayload;
 
-    const existingTask = await getScopedTaskOrThrow(taskId, workspaceId);
+    const existingTask = await getScopedTaskOrThrow(req, taskId, workspaceId);
 
     assertTaskUpdatePermission(req, payload, existingTask);
 
@@ -491,7 +507,11 @@ const deleteTask = async (req: Request): Promise<void> => {
     const workspaceId = req.workspaceId!;
     const taskId = req.params.taskId as string;
 
-    await getScopedTaskOrThrow(taskId, workspaceId);
+    await getScopedTaskOrThrow(req, taskId, workspaceId);
+
+    if (req.workspaceRole === "MEMBER") {
+      throw new AppError(status.FORBIDDEN, "Members do not have permission to delete tasks");
+    }
 
     await prisma.task.update({
       where: { id: taskId },

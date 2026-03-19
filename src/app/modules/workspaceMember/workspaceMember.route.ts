@@ -17,6 +17,7 @@ router.get(
   validateRequest(WorkspaceMemberValidation.workspaceIdParamSchema),
   workspaceContext,
   requireFeature("workspace.memberManagement"),
+  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
   WorkspaceMemberController.getMembers
 );
 

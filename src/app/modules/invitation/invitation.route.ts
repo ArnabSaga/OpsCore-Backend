@@ -41,13 +41,13 @@ router.delete(
 );
 
 router.post(
-  "/invitations/:token/accept",
+  "/:token/accept",
   validateRequest(InvitationValidation.invitationTokenParamsSchema),
   InvitationController.acceptInvitation
 );
 
 router.post(
-  "/invitations/:token/decline",
+  "/:token/decline",
   validateRequest(InvitationValidation.invitationTokenParamsSchema),
   InvitationController.declineInvitation
 );

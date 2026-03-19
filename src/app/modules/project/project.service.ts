@@ -29,12 +29,13 @@ const buildProjectBaseWhere = (workspaceId: string, includeArchived = false) => 
   };
 };
 
-const getScopedProjectOrThrow = async (projectId: string, workspaceId: string) => {
+const getScopedProjectOrThrow = async (req: Request, projectId: string, workspaceId: string) => {
   const project = await prisma.project.findFirst({
     where: {
       id: projectId,
       workspaceId,
       deletedAt: null,
+      ...(req.workspaceRole === "MEMBER" ? { members: { some: { userId: req.user!.id } } } : {}),
     },
     select: {
       id: true,
@@ -48,7 +49,7 @@ const getScopedProjectOrThrow = async (projectId: string, workspaceId: string) =
   });
 
   if (!project) {
-    throw new AppError(status.NOT_FOUND, "Project not found");
+    throw new AppError(status.NOT_FOUND, "Project not found or access denied");
   }
 
   return project;
@@ -75,6 +76,12 @@ const getProjects = async (
     const where: any = {
       ...buildProjectBaseWhere(workspaceId, archived),
     };
+
+    if (req.workspaceRole === "MEMBER") {
+      where.members = {
+        some: { userId: req.user!.id },
+      };
+    }
 
     if (query.searchTerm) {
       where.OR = [
@@ -218,7 +225,7 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
     const workspaceId = req.workspaceId!;
     const projectId = req.params.projectId as string;
 
-    await getScopedProjectOrThrow(projectId, workspaceId);
+    await getScopedProjectOrThrow(req, projectId, workspaceId);
 
     const project = await prisma.project.findFirst({
       where: {
@@ -274,7 +281,7 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
     const projectId = req.params.projectId as string;
     const payload = req.body as IUpdateProjectPayload;
 
-    const existingProject = await getScopedProjectOrThrow(projectId, workspaceId);
+    const existingProject = await getScopedProjectOrThrow(req, projectId, workspaceId);
 
     const nextStartDate =
       payload.startDate !== undefined
@@ -369,11 +376,22 @@ const deleteProject = async (req: Request): Promise<void> => {
     const workspaceId = req.workspaceId!;
     const projectId = req.params.projectId as string;
 
-    await getScopedProjectOrThrow(projectId, workspaceId);
+    await getScopedProjectOrThrow(req, projectId, workspaceId);
 
-    await prisma.project.update({
-      where: { id: projectId },
-      data: { deletedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id: projectId },
+        data: { deletedAt: new Date() },
+      });
+
+      await tx.task.updateMany({
+        where: { projectId },
+        data: { deletedAt: new Date() },
+      });
+
+      await tx.projectMember.deleteMany({
+        where: { projectId },
+      });
     });
   } catch (error: any) {
     if (error instanceof AppError) throw error;
@@ -394,7 +412,7 @@ const getProjectTasks = async (
     const projectId = req.params.projectId as string;
     const query = req.query as unknown as IProjectTaskQuery;
 
-    await getScopedProjectOrThrow(projectId, workspaceId);
+    await getScopedProjectOrThrow(req, projectId, workspaceId);
 
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
@@ -463,7 +481,7 @@ const getProjectMembers = async (req: Request): Promise<IProjectMemberResponse[]
     const workspaceId = req.workspaceId!;
     const projectId = req.params.projectId as string;
 
-    await getScopedProjectOrThrow(projectId, workspaceId);
+    await getScopedProjectOrThrow(req, projectId, workspaceId);
 
     const members = await prisma.projectMember.findMany({
       where: {
@@ -497,7 +515,11 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
     const { userIds } = req.body as IAssignProjectMembersPayload;
 
     await assertPlanFeatureEnabled(workspaceId, "projects.assignMembers");
-    await getScopedProjectOrThrow(projectId, workspaceId);
+    const project = await getScopedProjectOrThrow(req, projectId, workspaceId);
+
+    if (project.archivedAt || project.status === "ARCHIVED") {
+      throw new AppError(status.BAD_REQUEST, "Cannot assign members to an archived project");
+    }
 
     const workspaceMembers = await prisma.workspaceMember.findMany({
       where: {
