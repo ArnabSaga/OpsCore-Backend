@@ -64,6 +64,17 @@ const updateProfile = async (req: Request): Promise<IProfileResponse> => {
     const { name, removeImage } = req.body as IUpdateProfilePayload;
     const file = req.file;
 
+    if (name === undefined && !file && removeImage === undefined) {
+      throw new AppError(status.BAD_REQUEST, "No profile changes provided");
+    }
+
+    if (file && removeImage === "true") {
+      throw new AppError(
+        status.BAD_REQUEST,
+        "You cannot upload a new image and remove the current image in the same request"
+      );
+    }
+
     const existingUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { image: true },
@@ -77,15 +88,8 @@ const updateProfile = async (req: Request): Promise<IProfileResponse> => {
 
     if (file && file.path) {
       imageUrl = file.path;
-
-      if (existingUser.image) {
-        destroyCloudinaryAssetByUrl(existingUser.image).catch(console.error);
-      }
     } else if (removeImage === "true") {
       imageUrl = null;
-      if (existingUser.image) {
-        destroyCloudinaryAssetByUrl(existingUser.image).catch(console.error);
-      }
     }
 
     const user = await prisma.user.update({
@@ -96,6 +100,10 @@ const updateProfile = async (req: Request): Promise<IProfileResponse> => {
       },
       select: profileSelect,
     });
+
+    if (imageUrl !== undefined && existingUser.image && existingUser.image !== imageUrl) {
+      destroyCloudinaryAssetByUrl(existingUser.image).catch(console.error);
+    }
 
     return user;
   } catch (error) {

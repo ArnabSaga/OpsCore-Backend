@@ -25,8 +25,24 @@ const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     }
   }
 
-  if (req.file && req.file.path) {
-    destroyCloudinaryAssetByUrl(req.file.path).catch(console.error);
+  if (req.file && (req.file as Express.Multer.File).path) {
+    destroyCloudinaryAssetByUrl((req.file as Express.Multer.File).path).catch(console.error);
+  }
+
+  if (req.files) {
+    if (Array.isArray(req.files)) {
+      req.files.forEach((file) => {
+        if (file.path) destroyCloudinaryAssetByUrl(file.path).catch(console.error);
+      });
+    } else {
+      Object.values(req.files).forEach((fileArray) => {
+        if (Array.isArray(fileArray)) {
+          fileArray.forEach((file) => {
+            if (file.path) destroyCloudinaryAssetByUrl(file.path).catch(console.error);
+          });
+        }
+      });
+    }
   }
 
   let statusCode: number = status.INTERNAL_SERVER_ERROR;

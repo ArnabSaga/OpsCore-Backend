@@ -84,12 +84,18 @@ export const destroyCloudinaryAssetByUrl = async (fileUrl: string) => {
 
   for (const resourceType of attempts) {
     try {
-      await cloudinary.uploader.destroy(publicId, {
+      const result = await cloudinary.uploader.destroy(publicId, {
         invalidate: true,
         resource_type: resourceType,
       });
 
-      return true;
+      if (result.result === "ok") {
+        return true;
+      }
+
+      if (result.result === "not found") {
+        continue;
+      }
     } catch {
       continue;
     }
