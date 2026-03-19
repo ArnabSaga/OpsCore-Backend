@@ -202,107 +202,9 @@ Every operational table includes a:
 workspace_id
 ```
 
-This ensures strict **tenant data isolation**.
+# 🛣 OpsCore API Endpoints
 
 ---
-
-## 1️⃣ Workspaces
-
-| Field              | Type      | Constraints   |
-| ------------------ | --------- | ------------- |
-| id                 | UUID      | Primary Key   |
-| name               | String    | Not Null      |
-| stripe_customer_id | String    | Nullable      |
-| subscription_plan  | Enum      | `FREE`, `PRO`, `ENTERPRISE` |
-| created_at         | Timestamp |               |
-
----
-
-## 2️⃣ Users
-
-| Field         | Type      | Constraints |
-| ------------- | --------- | ----------- |
-| id            | UUID      | Primary Key |
-| email         | String    | Unique      |
-| password_hash | String    | Not Null    |
-| created_at    | Timestamp |             |
-
----
-
-## 3️⃣ WorkspaceMembers
-
-RBAC pivot table linking users and workspaces.
-
-| Field        | Type                              |
-| ------------ | --------------------------------- |
-| workspace_id | UUID                              |
-| user_id      | UUID                              |
-| role         | Enum (`OWNER`, `ADMIN`, `MEMBER`) |
-
----
-
-## 4️⃣ Projects
-
-| Field        | Type                         |
-| ------------ | ---------------------------- |
-| id           | UUID                         |
-| workspace_id | UUID                         |
-| name         | String                       |
-| status       | Enum (`ACTIVE`, `COMPLETED`) |
-
----
-
-## 5️⃣ Tasks
-
-| Field               | Type                                 |
-| ------------------- | ------------------------------------ |
-| id                  | UUID                                 |
-| project_id          | UUID                                 |
-| title               | String                               |
-| assigned_to_user_id | UUID                                 |
-| status              | Enum (`TODO`, `IN_PROGRESS`, `DONE`) |
-| due_date            | Date                                 |
-
----
-
-## 6️⃣ Invoices
-
-| Field        | Type                     |
-| ------------ | ------------------------ |
-| id           | UUID                     |
-| workspace_id | UUID                     |
-| amount       | Decimal                  |
-| status       | Enum (`PENDING`, `PAID`, `OVERDUE`, `CANCELED`) |
-
----
-
-## 7️⃣ Subscriptions
-
-| Field                  | Type   |
-| ---------------------- | ------ |
-| id                     | UUID   |
-| workspace_id           | UUID   |
-| stripe_subscription_id | String |
-| plan                   | Enum   |
-| status                 | Enum   |
-
----
-
-## 8️⃣ ActivityLogs
-
-Tracks system activity.
-
-| Field        | Type      |
-| ------------ | --------- |
-| id           | UUID      |
-| workspace_id | UUID      |
-| user_id      | UUID      |
-| action       | String    |
-| created_at   | Timestamp |
-
----
-
-# 🛣 OpsCore API Endpoints (Improved Version)
 
 # 🔐 Authentication
 
@@ -367,7 +269,7 @@ Tracks system activity.
 | PATCH | `/api/projects/:projectId` | Update project |
 | DELETE | `/api/projects/:projectId` | Delete project |
 
-### Optional Nested Project Routes
+### Nested Project Routes
 
 | Method | Endpoint | Description |
 |------|------|------|
@@ -387,13 +289,17 @@ Tracks system activity.
 | PATCH | `/api/tasks/:taskId` | Update task |
 | DELETE | `/api/tasks/:taskId` | Delete task |
 
-### Optional Task Extensions
+### Task Extensions
 
 | Method | Endpoint | Description |
 |------|------|------|
 | GET | `/api/tasks/:taskId/comments` | Get task comments |
 | POST | `/api/tasks/:taskId/comments` | Add comment to task |
+| PATCH | `/api/tasks/:taskId/comments/:commentId` | Update comment |
+| DELETE | `/api/tasks/:taskId/comments/:commentId` | Delete comment |
+| GET | `/api/tasks/:taskId/attachments` | Get task attachments |
 | POST | `/api/tasks/:taskId/attachments` | Upload task attachment |
+| DELETE | `/api/tasks/:taskId/attachments/:attachmentId` | Delete attachment |
 
 ---
 
@@ -422,18 +328,33 @@ Tracks system activity.
 | GET | `/api/billing/invoices` | Get billing/payment history |
 | POST | `/api/webhooks/stripe` | Handle Stripe webhooks |
 
-> `POST /api/billing/subscribe` was replaced with `POST /api/billing/checkout-session` because that is closer to real Stripe flow.
-
 ---
 
-# 📊 Dashboard & Analytics
+# 📊 Dashboard
 
 | Method | Endpoint | Description |
 |------|------|------|
 | GET | `/api/dashboard/overview` | Get workspace dashboard summary |
-| GET | `/api/dashboard/activity` | Get recent activity |
+| GET | `/api/dashboard/activity` | Get recent workspace activity |
+
+---
+
+# 📈 Analytics
+
+| Method | Endpoint | Description |
+|------|------|------|
 | GET | `/api/analytics/projects` | Get project analytics |
 | GET | `/api/analytics/revenue` | Get revenue analytics |
+
+---
+
+# ❤️ Health
+
+| Method | Endpoint | Description |
+|------|------|------|
+| GET | `/api/health` | Check API server health status |
+| GET | `/api/health/db` | Check database connectivity status |
+| GET | `/api/health/ready` | Readiness probe for application |
 
 ---
 
@@ -446,7 +367,7 @@ Tracks system activity.
 
 ---
 
-# 👤 Account / Profile
+# 👤 Account
 
 | Method | Endpoint | Description |
 |------|------|------|
@@ -455,7 +376,6 @@ Tracks system activity.
 | PATCH | `/api/account/password` | Update password |
 
 ---
-
 ## Golden Rule of Tenant Isolation
 
 All queries must include:
@@ -466,48 +386,41 @@ WHERE workspace_id = currentWorkspace
 
 This guarantees that no workspace can access another workspace’s data.
 
+
 ---
 
 ## Workspace Context Injection
 
-The backend extracts `workspace_id` from the authenticated user's token.
-
-Never trust workspace identifiers sent from the client.
+Never trust workspaceId from client.
 
 ---
 
 ## Input Security
 
-All inputs must be sanitized to prevent:
-
-* SQL Injection
-* Cross-Site Scripting (XSS)
-* Invalid payloads
+* Prevent SQL Injection
+* Prevent XSS
+* Validate all payloads
 
 ---
 
 # 🚀 Future Enhancements
 
-Potential improvements:
-
-* Advanced analytics dashboard
+* Advanced analytics
 * Workflow automation
 * Email notifications
-* Mobile application
+* Mobile app
 * Plugin ecosystem
-* Webhooks and integrations
-* Multi-language support
+* Webhooks
 
 ---
 
 # 📈 Conclusion
 
-OpsCore is a **scalable multi-tenant SaaS platform** enabling organizations to manage projects, teams, and billing inside secure workspaces.
+OpsCore is a **scalable multi-tenant SaaS platform** designed for real-world business operations.
 
-The architecture prioritizes:
+Focus areas:
 
-* Scalability
 * Security
+* Scalability
 * Tenant isolation
-* Modular system design
-* Operational efficiency
+* Clean modular architecture
