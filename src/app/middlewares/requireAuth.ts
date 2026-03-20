@@ -45,7 +45,7 @@ export const requireAuth = async (req: Request, _res: Response, next: NextFuncti
       name: dbUser.name,
       email: dbUser.email,
       image: dbUser.image,
-      systemRole: String(dbUser.systemRole),
+      systemRole: dbUser.systemRole,
       isActive: dbUser.isActive,
     };
 

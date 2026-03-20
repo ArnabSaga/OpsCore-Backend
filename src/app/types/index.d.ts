@@ -1,3 +1,4 @@
+import { WorkspaceMemberRole } from "../../generated/prisma/enums";
 import { TAuthenticatedUser, TWorkspaceMembershipContext } from "../interfaces/auth.interface";
 
 declare global {
@@ -5,7 +6,7 @@ declare global {
     interface Request {
       user?: TAuthenticatedUser;
       workspaceId?: string;
-      workspaceRole?: string;
+      workspaceRole?: WorkspaceMemberRole;
       workspaceMembership?: TWorkspaceMembershipContext;
     }
   }

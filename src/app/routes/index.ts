@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { AuthRoutes } from "../modules/auth/auth.route";
 import { BillingRoutes } from "../modules/billing/billing.route";
+import { DashboardRoutes } from "../modules/dashboard/dashboard.route";
 import {
   InvitationActionRoutes,
   InvitationWorkspaceRoutes,
@@ -33,6 +34,7 @@ const moduleRoutes: TModuleRoutes[] = [
   { path: "/projects", route: ProjectRoutes },
   { path: "/tasks", route: TaskRoutes },
   { path: "/invoices", route: InvoiceRoutes },
+  { path: "/dashboard", route: DashboardRoutes },
 
   // Billing
   { path: "/billing", route: BillingRoutes },
