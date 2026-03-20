@@ -1,7 +1,10 @@
 import { Router } from "express";
+import { ActivityLogRoutes } from "../modules/activityLog/activityLog.route";
+import { AnalyticsRoutes } from "../modules/analytics/analytics.route";
 import { AuthRoutes } from "../modules/auth/auth.route";
 import { BillingRoutes } from "../modules/billing/billing.route";
 import { DashboardRoutes } from "../modules/dashboard/dashboard.route";
+import { HealthRoutes } from "../modules/health/health.route";
 import {
   InvitationActionRoutes,
   InvitationWorkspaceRoutes,
@@ -12,8 +15,6 @@ import { TaskRoutes } from "../modules/task/task.route";
 import { UserRoutes } from "../modules/user/user.route";
 import { WorkspaceRoutes } from "../modules/workspace/workspace.route";
 import { WorkspaceMemberRoutes } from "../modules/workspaceMember/workspaceMember.route";
-import { ActivityLogRoutes } from '../modules/activityLog/activityLog.route';
-import { AnalyticsRoutes } from '../modules/analytics/analytics.route';
 
 type TModuleRoutes = {
   path: string;
@@ -39,6 +40,7 @@ const moduleRoutes: TModuleRoutes[] = [
   { path: "/dashboard", route: DashboardRoutes },
   { path: "/activity-logs", route: ActivityLogRoutes },
   { path: "/analytics", route: AnalyticsRoutes },
+  { path: "/health", route: HealthRoutes },
 
   // Billing
   { path: "/billing", route: BillingRoutes },
