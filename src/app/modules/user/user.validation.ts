@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const updateProfileSchema = z.object({
+const updateProfileValidationSchema = z.object({
   body: z
     .object({
       name: z
@@ -16,5 +16,5 @@ const updateProfileSchema = z.object({
 });
 
 export const UserValidation = {
-  updateProfileSchema,
+  updateProfileValidationSchema,
 };

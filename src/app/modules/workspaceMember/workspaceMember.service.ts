@@ -1,6 +1,6 @@
 import { Request } from "express";
 import status from "http-status";
-import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../../generated/prisma/enums";
+import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../constants/role";
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import { assertPlanFeatureEnabled } from "../../utils/checkPlanLimit";

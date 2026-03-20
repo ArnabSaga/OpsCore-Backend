@@ -15,6 +15,7 @@ import {
   IUpdateInvoicePayload,
 } from "./invoice.interface";
 import { formatMoney, generateInvoicePdf, mapInvoiceToEmailTemplateData } from "./invoice.utils";
+import { calculateInvoiceStatus } from "../../utils/calculateInvoiceStatus";
 
 
 const normalizeCurrency = (currency?: string) => {
@@ -174,14 +175,13 @@ const mapInvoiceResponse = (
 };
 
 const getInvoices = async (
-  req: Request
+  workspaceId: string,
+  query: IInvoiceQuery
 ): Promise<{
   data: IInvoiceListItem[];
   meta: { page: number; limit: number; total: number; totalPages: number };
 }> => {
   try {
-    const workspaceId = req.workspaceId!;
-    const query = req.query as unknown as IInvoiceQuery;
 
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
@@ -346,7 +346,9 @@ const createInvoice = async (req: Request): Promise<IInvoiceResponse> => {
               invoiceNumber: generateInvoiceNumber(),
               amount,
               currency: normalizeCurrency(payload.currency),
-              status: InvoiceStatus.PENDING,
+              status: calculateInvoiceStatus({
+                dueDate: payload.dueAt || new Date(),
+              }) as InvoiceStatus,
               customerName: payload.customerName?.trim() || null,
               customerEmail: payload.customerEmail?.trim().toLowerCase() || null,
               notes: payload.notes?.trim() || null,
@@ -481,6 +483,11 @@ const updateInvoice = async (req: Request): Promise<IInvoiceResponse> => {
                 },
               }
             : {}),
+          status: calculateInvoiceStatus({
+            dueDate: payload.dueAt !== undefined ? (payload.dueAt || new Date()) : existingInvoice.dueAt || new Date(),
+            paidAt: existingInvoice.paidAt,
+            canceledAt: existingInvoice.canceledAt,
+          }) as InvoiceStatus,
         },
         select: getInvoiceSelect,
       });

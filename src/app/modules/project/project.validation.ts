@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProjectStatus, TaskStatus } from "../../constants/task";
 
 const projectIdParamSchema = z.object({
   params: z.object({
@@ -25,7 +26,7 @@ const createProjectSchema = z.object({
         .min(2, "Client name must be at least 2 characters")
         .max(150, "Client name cannot exceed 150 characters")
         .optional(),
-      status: z.enum(["ACTIVE", "COMPLETED", "ON_HOLD", "ARCHIVED"]).optional(),
+      status: z.nativeEnum(ProjectStatus).optional(),
       startDate: z.string().datetime().optional(),
       endDate: z.string().datetime().optional(),
     })
@@ -67,7 +68,7 @@ const updateProjectSchema = z.object({
         .max(150, "Client name cannot exceed 150 characters")
         .nullable()
         .optional(),
-      status: z.enum(["ACTIVE", "COMPLETED", "ON_HOLD", "ARCHIVED"]).optional(),
+      status: z.nativeEnum(ProjectStatus).optional(),
       startDate: z.string().datetime().nullable().optional(),
       endDate: z.string().datetime().nullable().optional(),
       archived: z.boolean().optional(),
@@ -94,7 +95,7 @@ const updateProjectSchema = z.object({
 const getProjectsQuerySchema = z.object({
   query: z.object({
     searchTerm: z.string().trim().optional(),
-    status: z.enum(["ACTIVE", "COMPLETED", "ON_HOLD", "ARCHIVED"]).optional(),
+    status: z.nativeEnum(ProjectStatus).optional(),
     clientName: z.string().trim().optional(),
     archived: z.enum(["true", "false"]).optional(),
     page: z.coerce.number().int().min(1).optional(),
@@ -106,7 +107,7 @@ const getProjectsQuerySchema = z.object({
 
 const getProjectTasksQuerySchema = z.object({
   query: z.object({
-    status: z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]).optional(),
+    status: z.nativeEnum(TaskStatus).optional(),
     assignedToUserId: z.string().uuid("Assigned user ID must be a valid UUID").optional(),
     page: z.coerce.number().int().min(1).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),

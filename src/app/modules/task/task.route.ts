@@ -1,11 +1,11 @@
 import { Router } from "express";
-import { WorkspaceMemberRole } from "../../../generated/prisma/enums";
+import { WorkspaceMemberRole } from "../../constants/role";
 import { requireAuth } from "../../middlewares/requireAuth";
 import { requireFeature } from "../../middlewares/requireFeature";
 import { requireRole } from "../../middlewares/requireRole";
-import { uploadTaskAttachment } from "../../middlewares/uploadTaskAttachment";
 import validateRequest from "../../middlewares/validateRequest";
 import { workspaceContext } from "../../middlewares/workspaceContext";
+import { uploadTaskAttachment } from "../../uploads/task/uploadTaskAttachment";
 import { TaskController } from "./task.controller";
 import { TaskValidation } from "./task.validation";
 
@@ -81,8 +81,8 @@ router.post(
   "/:taskId/attachments",
   requireFeature("tasks.attachments"),
   validateRequest(TaskValidation.taskIdParamSchema),
-  uploadTaskAttachment,
-  TaskController.createTaskAttachment
+  uploadTaskAttachment.single("file"),
+  TaskController.uploadTaskAttachment
 );
 
 router.delete(

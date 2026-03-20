@@ -2,10 +2,32 @@ import { Request, Response } from "express";
 import status from "http-status";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
+import { pick } from "../../utils/pick";
 import { TaskService } from "./task.service";
 
 const getTasks = catchAsync(async (req: Request, res: Response) => {
-  const result = await TaskService.getTasks(req);
+  const query = pick(req.query as any, [
+    "searchTerm",
+    "projectId",
+    "assignedToUserId",
+    "assignedToMe",
+    "status",
+    "priority",
+    "overdue",
+    "dueFrom",
+    "dueTo",
+    "page",
+    "limit",
+    "sortBy",
+    "sortOrder",
+  ]);
+
+  const result = await TaskService.getTasks(
+    req.workspaceId!,
+    req.workspaceRole!,
+    req.user!.id,
+    query
+  );
 
   sendResponse(res, {
     statusCode: status.OK,
@@ -60,7 +82,15 @@ const deleteTask = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getTaskComments = catchAsync(async (req: Request, res: Response) => {
-  const result = await TaskService.getTaskComments(req);
+  const query = pick(req.query as any, ["page", "limit"]);
+
+  const result = await TaskService.getTaskComments(
+    req.workspaceId!,
+    req.workspaceRole!,
+    req.user!.id,
+    req.params.taskId as string,
+    query
+  );
 
   sendResponse(res, {
     statusCode: status.OK,
@@ -104,7 +134,15 @@ const deleteTaskComment = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getTaskAttachments = catchAsync(async (req: Request, res: Response) => {
-  const result = await TaskService.getTaskAttachments(req);
+  const query = pick(req.query as any, ["page", "limit"]);
+
+  const result = await TaskService.getTaskAttachments(
+    req.workspaceId!,
+    req.workspaceRole!,
+    req.user!.id,
+    req.params.taskId as string,
+    query
+  );
 
   sendResponse(res, {
     statusCode: status.OK,
@@ -115,7 +153,7 @@ const getTaskAttachments = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const createTaskAttachment = catchAsync(async (req: Request, res: Response) => {
+const uploadTaskAttachment = catchAsync(async (req: Request, res: Response) => {
   const result = await TaskService.createTaskAttachment(req);
 
   sendResponse(res, {
@@ -147,6 +185,6 @@ export const TaskController = {
   updateTaskComment,
   deleteTaskComment,
   getTaskAttachments,
-  createTaskAttachment,
+  uploadTaskAttachment,
   deleteTaskAttachment,
 };

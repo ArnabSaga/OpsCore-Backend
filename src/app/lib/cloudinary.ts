@@ -36,7 +36,7 @@ export const taskAttachmentStorage = new CloudinaryStorage({
   params: async (req, file) => {
     const workspaceId = req.workspaceId;
     const taskId = req.params.taskId;
-    
+
     return {
       folder: `${envVars.CLOUDINARY.TASK_ATTACHMENT_FOLDER}/${workspaceId}/${taskId}`,
       resource_type: "auto",

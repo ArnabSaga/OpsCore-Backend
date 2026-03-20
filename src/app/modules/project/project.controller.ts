@@ -2,10 +2,27 @@ import { Request, Response } from "express";
 import status from "http-status";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
+import { pick } from "../../utils/pick";
 import { ProjectService } from "./project.service";
 
 const getProjects = catchAsync(async (req: Request, res: Response) => {
-  const result = await ProjectService.getProjects(req);
+  const query = pick(req.query as any, [
+    "searchTerm",
+    "status",
+    "clientName",
+    "archived",
+    "page",
+    "limit",
+    "sortBy",
+    "sortOrder",
+  ]);
+
+  const result = await ProjectService.getProjects(
+    req.workspaceId!,
+    req.workspaceRole!,
+    req.user!.id,
+    query
+  );
 
   sendResponse(res, {
     statusCode: status.OK,
@@ -60,7 +77,15 @@ const deleteProject = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getProjectTasks = catchAsync(async (req: Request, res: Response) => {
-  const result = await ProjectService.getProjectTasks(req);
+  const query = pick(req.query as any, ["status", "assignedToUserId", "page", "limit", "sortBy", "sortOrder"]);
+
+  const result = await ProjectService.getProjectTasks(
+    req.workspaceId!,
+    req.workspaceRole!,
+    req.user!.id,
+    req.params.projectId as string,
+    query
+  );
 
   sendResponse(res, {
     statusCode: status.OK,

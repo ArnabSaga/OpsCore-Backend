@@ -4,7 +4,6 @@ import { ZodError } from "zod";
 import { Prisma } from "../../generated/prisma/client";
 import { envVars } from "../config/env";
 import AppError from "../errors/AppError";
-import { destroyCloudinaryAssetByUrl } from "../config/cloudinary.config";
 import {
   handlePrismaClientInitializationError,
   handlePrismaClientKnownRequestError,
@@ -13,6 +12,9 @@ import {
   handlePrismaClientValidationError,
 } from "../errors/handlePrismaErrors";
 import { TErrorSources } from "../interfaces/error.interface";
+import multer from "multer";
+import { destroyCloudinaryAssetByUrl } from "../lib/cloudinary";
+import { MAX_FILE_SIZE } from "../constants/upload";
 
 const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (envVars.NODE_ENV === "development") {
@@ -86,13 +88,22 @@ const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     statusCode = simplifiedError.statusCode ?? status.INTERNAL_SERVER_ERROR;
     message = simplifiedError.message;
     errorSources = simplifiedError.errorSources;
-  } else if (err instanceof AppError) {
-    statusCode = err.statusCode;
-    message = err.message;
     errorSources = [
       {
         path: "",
         message: err.message,
+      },
+    ];
+  } else if (err instanceof multer.MulterError) {
+    statusCode = status.BAD_REQUEST;
+    message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? `File size must not exceed ${MAX_FILE_SIZE / (1024 * 1024)}MB`
+        : err.message;
+    errorSources = [
+      {
+        path: "",
+        message: message,
       },
     ];
   } else if (err instanceof Error) {

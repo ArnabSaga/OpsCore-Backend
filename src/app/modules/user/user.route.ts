@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middlewares/requireAuth";
-import { uploadProfilePhoto } from "../../middlewares/uploadProfilePhoto";
 import validateRequest from "../../middlewares/validateRequest";
+import { uploadProfilePhoto } from "../../uploads/user/uploadProfilePhoto";
 import { UserController } from "./user.controller";
 import { UserValidation } from "./user.validation";
 
@@ -13,8 +13,8 @@ router.get("/profile", UserController.getProfile);
 
 router.patch(
   "/profile",
-  uploadProfilePhoto,
-  validateRequest(UserValidation.updateProfileSchema),
+  uploadProfilePhoto.single("photo"),
+  validateRequest(UserValidation.updateProfileValidationSchema),
   UserController.updateProfile
 );
 

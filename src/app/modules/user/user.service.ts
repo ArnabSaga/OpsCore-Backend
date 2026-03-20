@@ -1,10 +1,10 @@
 import { Request } from "express";
 import status from "http-status";
-import AppError from "../../errors/AppError";
 import { WorkspaceMemberStatus } from "../../../generated/prisma/enums";
+import AppError from "../../errors/AppError";
+import { destroyCloudinaryAssetByUrl } from "../../lib/cloudinary";
 import { prisma } from "../../lib/prisma";
 import { IProfileResponse, IUpdateProfilePayload } from "./user.interface";
-import { destroyCloudinaryAssetByUrl } from "../../config/cloudinary.config";
 
 const profileSelect = {
   id: true,

@@ -4,6 +4,7 @@ import status from "http-status";
 import AppError from "../../errors/AppError";
 import { auth } from "../../lib/auth";
 import { prisma } from "../../lib/prisma";
+import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../constants/role";
 import { generateSlug } from "../../utils/generateSlug";
 import {
   IChangePasswordPayload,
@@ -96,8 +97,8 @@ const register = async (req: Request): Promise<IRegisterServiceResponse> => {
           data: {
             workspaceId: createdWorkspace.id,
             userId,
-            role: "OWNER",
-            status: "ACTIVE",
+            role: WorkspaceMemberRole.OWNER,
+            status: WorkspaceMemberStatus.ACTIVE,
             addedByUserId: userId,
           },
         });
@@ -225,7 +226,7 @@ const getMe = async (req: Request): Promise<IMeResponse> => {
         createdAt: true,
         workspaceMembers: {
           where: {
-            status: "ACTIVE",
+            status: WorkspaceMemberStatus.ACTIVE,
             workspace: {
               deletedAt: null,
             },
@@ -441,8 +442,8 @@ const googleLoginSuccess = async (session: Record<string, any>) => {
         data: {
           workspaceId: workspace.id,
           userId,
-          role: "OWNER",
-          status: "ACTIVE",
+          role: WorkspaceMemberRole.OWNER,
+          status: WorkspaceMemberStatus.ACTIVE,
           addedByUserId: userId,
         },
       });
@@ -467,7 +468,7 @@ const switchWorkspace = async (req: Request): Promise<{ workspaceId: string; wor
       where: {
         userId: req.user!.id,
         workspaceId,
-        status: "ACTIVE",
+        status: WorkspaceMemberStatus.ACTIVE,
       },
       select: {
         role: true,

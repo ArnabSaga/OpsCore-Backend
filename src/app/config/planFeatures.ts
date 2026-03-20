@@ -1,4 +1,6 @@
-export type WorkspacePlan = "FREE" | "PRO" | "ENTERPRISE";
+import { SubscriptionPlan } from "../constants/subscription";
+
+export type WorkspacePlan = SubscriptionPlan;
 
 export type PlanFeatureKey =
   | "workspace.multiWorkspace"
@@ -289,7 +291,7 @@ export const getHigherWorkspacePlan = (a: WorkspacePlan, b: WorkspacePlan): Work
 };
 
 export const isKnownWorkspacePlan = (value: string): value is WorkspacePlan => {
-  return value === "FREE" || value === "PRO" || value === "ENTERPRISE";
+  return Object.values(SubscriptionPlan).includes(value as SubscriptionPlan);
 };
 
 export const isKnownFeatureKey = (value: string): value is PlanFeatureKey => {

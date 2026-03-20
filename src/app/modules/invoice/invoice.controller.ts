@@ -2,10 +2,22 @@ import { Request, Response } from "express";
 import status from "http-status";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
+import { pick } from "../../utils/pick";
 import { InvoiceService } from "./invoice.service";
 
 const getInvoices = catchAsync(async (req: Request, res: Response) => {
-  const result = await InvoiceService.getInvoices(req);
+  const query = pick(req.query as any, [
+    "searchTerm",
+    "status",
+    "overdue",
+    "issued",
+    "page",
+    "limit",
+    "sortBy",
+    "sortOrder",
+  ]);
+
+  const result = await InvoiceService.getInvoices(req.workspaceId!, query);
 
   sendResponse(res, {
     statusCode: status.OK,

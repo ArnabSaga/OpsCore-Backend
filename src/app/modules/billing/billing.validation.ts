@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SubscriptionPlan } from "../../constants/subscription";
 
 const getBillingHistoryQuerySchema = z.object({
   query: z.object({
@@ -9,7 +10,7 @@ const getBillingHistoryQuerySchema = z.object({
 
 const prepareCheckoutSchema = z.object({
   body: z.object({
-    plan: z.enum(["PRO", "ENTERPRISE"]),
+    plan: z.nativeEnum(SubscriptionPlan),
     billingInterval: z.enum(["month", "year"]).optional(),
     successUrl: z.string().trim().url().optional(),
     cancelUrl: z.string().trim().url().optional(),

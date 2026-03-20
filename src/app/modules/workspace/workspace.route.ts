@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { WorkspaceMemberRole } from "../../../generated/prisma/enums";
+import { WorkspaceMemberRole } from "../../constants/role";
 import { requireAuth } from "../../middlewares/requireAuth";
 import { requireRole } from "../../middlewares/requireRole";
 import validateRequest from "../../middlewares/validateRequest";

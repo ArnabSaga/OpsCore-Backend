@@ -1,11 +1,11 @@
 import crypto from "crypto";
 import { Request } from "express";
 import status from "http-status";
+import { InvitationStatus } from "../../../generated/prisma/enums";
 import {
-  InvitationStatus,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
-} from "../../../generated/prisma/enums";
+} from "../../constants/role";
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import {

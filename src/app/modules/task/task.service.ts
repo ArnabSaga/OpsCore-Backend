@@ -1,8 +1,9 @@
 import { Request } from "express";
 import status from "http-status";
-import { envVars } from "../../config/env";
 import AppError from "../../errors/AppError";
-import { destroyCloudinaryAssetByUrl } from "../../config/cloudinary.config";
+import { destroyCloudinaryAssetByUrl } from "../../lib/cloudinary";
+import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../constants/role";
+import { TASK_DEFAULTS, TaskStatus } from "../../constants/task";
 import { prisma } from "../../lib/prisma";
 import {
   assertPlanFeatureEnabled,
@@ -67,7 +68,7 @@ const assertAssignableUser = async (userId: string, workspaceId: string) => {
     where: {
       workspaceId,
       userId,
-      status: "ACTIVE",
+      status: WorkspaceMemberStatus.ACTIVE,
       workspace: { deletedAt: null },
     },
     select: {
@@ -84,22 +85,27 @@ const assertAssignableUser = async (userId: string, workspaceId: string) => {
   }
 };
 
-const buildMemberTaskAccessWhere = (req: Request) => {
-  if (req.workspaceRole !== "MEMBER") return {};
+const buildMemberTaskAccessWhere = (userId: string, workspaceRole: string) => {
+  if (workspaceRole !== WorkspaceMemberRole.MEMBER) return {};
 
   return {
-    OR: [{ assignedToUserId: req.user!.id }, { createdByUserId: req.user!.id }],
+    OR: [{ assignedToUserId: userId }, { createdByUserId: userId }],
   };
 };
 
-const getScopedTaskOrThrow = async (req: Request, taskId: string, workspaceId: string) => {
+const getScopedTaskOrThrow = async (
+  userId: string,
+  workspaceRole: string,
+  taskId: string,
+  workspaceId: string
+) => {
   const task = await prisma.task.findFirst({
     where: {
       id: taskId,
       workspaceId,
       deletedAt: null,
       project: { deletedAt: null },
-      ...buildMemberTaskAccessWhere(req),
+      ...buildMemberTaskAccessWhere(userId, workspaceRole),
     },
     select: {
       id: true,
@@ -130,7 +136,8 @@ const getScopedTaskOrThrow = async (req: Request, taskId: string, workspaceId: s
 };
 
 const getScopedTaskCommentOrThrow = async (
-  req: Request,
+  userId: string,
+  workspaceRole: string,
   taskId: string,
   commentId: string,
   workspaceId: string
@@ -143,7 +150,7 @@ const getScopedTaskCommentOrThrow = async (
       task: {
         deletedAt: null,
         project: { deletedAt: null },
-        ...buildMemberTaskAccessWhere(req),
+        ...buildMemberTaskAccessWhere(userId, workspaceRole),
       },
     },
     select: {
@@ -173,7 +180,8 @@ const getScopedTaskCommentOrThrow = async (
 };
 
 const getScopedTaskAttachmentOrThrow = async (
-  req: Request,
+  userId: string,
+  workspaceRole: string,
   taskId: string,
   attachmentId: string,
   workspaceId: string
@@ -186,7 +194,7 @@ const getScopedTaskAttachmentOrThrow = async (
       task: {
         deletedAt: null,
         project: { deletedAt: null },
-        ...buildMemberTaskAccessWhere(req),
+        ...buildMemberTaskAccessWhere(userId, workspaceRole),
       },
     },
     select: {
@@ -216,8 +224,13 @@ const getScopedTaskAttachmentOrThrow = async (
   return attachment;
 };
 
-const assertTaskWriteAllowed = async (req: Request, taskId: string, workspaceId: string) => {
-  const task = await getScopedTaskOrThrow(req, taskId, workspaceId);
+const assertTaskWriteAllowed = async (
+  userId: string,
+  workspaceRole: string,
+  taskId: string,
+  workspaceId: string
+) => {
+  const task = await getScopedTaskOrThrow(userId, workspaceRole, taskId, workspaceId);
 
   if (task.project.archivedAt || task.project.status === "ARCHIVED") {
     throw new AppError(
@@ -331,7 +344,8 @@ const assertTaskQueryAccess = async (workspaceId: string, query: ITaskQuery) => 
 };
 
 const assertTaskUpdatePermission = (
-  req: Request,
+  userId: string,
+  workspaceRole: string,
   payload: IUpdateTaskPayload,
   existingTask: {
     assignedToUserId: string | null;
@@ -339,22 +353,17 @@ const assertTaskUpdatePermission = (
     project: { archivedAt: Date | null; status: string };
   }
 ) => {
-  const workspaceRole = req.workspaceRole;
 
-  if (!workspaceRole) {
-    throw new AppError(status.FORBIDDEN, "Workspace role is missing");
-  }
-
-  if (workspaceRole === "OWNER" || workspaceRole === "ADMIN") {
+  if (workspaceRole === WorkspaceMemberRole.OWNER || workspaceRole === WorkspaceMemberRole.ADMIN) {
     return;
   }
 
-  if (workspaceRole !== "MEMBER") {
+  if (workspaceRole !== WorkspaceMemberRole.MEMBER) {
     throw new AppError(status.FORBIDDEN, "You do not have permission to update this task");
   }
 
-  const isAssignee = existingTask.assignedToUserId === req.user!.id;
-  const isCreator = existingTask.createdByUserId === req.user!.id;
+  const isAssignee = existingTask.assignedToUserId === userId;
+  const isCreator = existingTask.createdByUserId === userId;
 
   if (!isAssignee && !isCreator) {
     throw new AppError(status.FORBIDDEN, "You do not have permission to update this task");
@@ -381,14 +390,15 @@ const assertTaskUpdatePermission = (
 };
 
 const getTasks = async (
-  req: Request
+  workspaceId: string,
+  workspaceRole: string,
+  userId: string,
+  query: ITaskQuery
 ): Promise<{
   data: ITaskListItem[];
   meta: { page: number; limit: number; total: number; totalPages: number };
 }> => {
   try {
-    const workspaceId = req.workspaceId!;
-    const query = req.query as unknown as ITaskQuery;
 
     await assertTaskQueryAccess(workspaceId, query);
 
@@ -406,8 +416,10 @@ const getTasks = async (
 
     const andConditions: any[] = [];
 
-    if (req.workspaceRole === "MEMBER") {
-      andConditions.push(buildMemberTaskAccessWhere(req));
+    if (workspaceRole === WorkspaceMemberRole.MEMBER) {
+      andConditions.push({
+        OR: [{ assignedToUserId: userId }, { createdByUserId: userId }],
+      });
     }
 
     if (query.searchTerm) {
@@ -429,7 +441,7 @@ const getTasks = async (
     }
 
     if (query.assignedToMe === "true") {
-      andConditions.push({ assignedToUserId: req.user!.id });
+      andConditions.push({ assignedToUserId: userId });
     }
 
     if (query.status) {
@@ -444,7 +456,7 @@ const getTasks = async (
       andConditions.push({ dueDate: { lt: new Date() } });
 
       if (!query.status) {
-        andConditions.push({ status: { not: "DONE" } });
+        andConditions.push({ status: { not: TaskStatus.DONE } });
       }
     }
 
@@ -515,8 +527,8 @@ const createTask = async (req: Request): Promise<ITaskResponse> => {
         assignedToUserId: payload.assignedToUserId ?? null,
         title: payload.title.trim(),
         description: payload.description?.trim(),
-        status: payload.status ?? "TODO",
-        priority: payload.priority ?? "MEDIUM",
+        status: payload.status ?? TASK_DEFAULTS.status,
+        priority: payload.priority ?? TASK_DEFAULTS.priority,
         dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
       },
       select: getTaskSelect,
@@ -544,7 +556,7 @@ const getTask = async (req: Request): Promise<ITaskResponse> => {
     const workspaceId = req.workspaceId!;
     const taskId = req.params.taskId as string;
 
-    await getScopedTaskOrThrow(req, taskId, workspaceId);
+    await getScopedTaskOrThrow(req.user!.id, req.workspaceRole!, taskId, workspaceId);
 
     const task = await prisma.task.findFirst({
       where: {
@@ -552,7 +564,7 @@ const getTask = async (req: Request): Promise<ITaskResponse> => {
         workspaceId,
         deletedAt: null,
         project: { deletedAt: null },
-        ...buildMemberTaskAccessWhere(req),
+        ...buildMemberTaskAccessWhere(req.user!.id, req.workspaceRole!),
       },
       select: getTaskSelect,
     });
@@ -584,9 +596,9 @@ const updateTask = async (req: Request): Promise<ITaskResponse> => {
     const taskId = req.params.taskId as string;
     const payload = req.body as IUpdateTaskPayload;
 
-    const existingTask = await getScopedTaskOrThrow(req, taskId, workspaceId);
+    const existingTask = await getScopedTaskOrThrow(req.user!.id, req.workspaceRole!, taskId, workspaceId);
 
-    assertTaskUpdatePermission(req, payload, existingTask);
+    assertTaskUpdatePermission(req.user!.id, req.workspaceRole!, payload, existingTask);
 
     if (existingTask.project.archivedAt || existingTask.project.status === "ARCHIVED") {
       throw new AppError(status.BAD_REQUEST, "Tasks under an archived project cannot be updated");
@@ -642,9 +654,9 @@ const deleteTask = async (req: Request): Promise<void> => {
     const workspaceId = req.workspaceId!;
     const taskId = req.params.taskId as string;
 
-    await getScopedTaskOrThrow(req, taskId, workspaceId);
+    await getScopedTaskOrThrow(req.user!.id, req.workspaceRole!, taskId, workspaceId);
 
-    if (req.workspaceRole === "MEMBER") {
+    if (req.workspaceRole === WorkspaceMemberRole.MEMBER) {
       throw new AppError(status.FORBIDDEN, "Members do not have permission to delete tasks");
     }
 
@@ -690,13 +702,15 @@ const deleteTask = async (req: Request): Promise<void> => {
   }
 };
 
-const getTaskComments = async (req: Request): Promise<IPaginatedTaskCommentResponse> => {
+const getTaskComments = async (
+  workspaceId: string,
+  workspaceRole: string,
+  userId: string,
+  taskId: string,
+  query: ITaskCommentQuery
+): Promise<IPaginatedTaskCommentResponse> => {
   try {
-    const workspaceId = req.workspaceId!;
-    const taskId = req.params.taskId as string;
-    const query = req.query as unknown as ITaskCommentQuery;
-
-    await getScopedTaskOrThrow(req, taskId, workspaceId);
+    await getScopedTaskOrThrow(userId, workspaceRole, taskId, workspaceId);
 
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
@@ -708,7 +722,7 @@ const getTaskComments = async (req: Request): Promise<IPaginatedTaskCommentRespo
       task: {
         deletedAt: null,
         project: { deletedAt: null },
-        ...buildMemberTaskAccessWhere(req),
+        ...buildMemberTaskAccessWhere(userId, workspaceRole),
       },
     };
 
@@ -746,7 +760,7 @@ const createTaskComment = async (req: Request): Promise<ITaskCommentResponse> =>
     const payload = req.body as ICreateTaskCommentPayload;
 
     await assertPlanFeatureEnabled(workspaceId, "tasks.comments");
-    await assertTaskWriteAllowed(req, taskId, workspaceId);
+    await assertTaskWriteAllowed(req.user!.id, req.workspaceRole!, taskId, workspaceId);
     await assertPlanLimitNotReached({
       workspaceId,
       limitKey: "taskCommentsPerTask",
@@ -781,9 +795,9 @@ const updateTaskComment = async (req: Request): Promise<ITaskCommentResponse> =>
     const userId = req.user!.id;
     const payload = req.body as IUpdateTaskCommentPayload;
 
-    const existingComment = await getScopedTaskCommentOrThrow(req, taskId, commentId, workspaceId);
+    const existingComment = await getScopedTaskCommentOrThrow(req.user!.id, req.workspaceRole!, taskId, commentId, workspaceId);
 
-    if (req.workspaceRole === "MEMBER" && existingComment.userId !== userId) {
+    if (req.workspaceRole === WorkspaceMemberRole.MEMBER && existingComment.userId !== userId) {
       throw new AppError(status.FORBIDDEN, "Members can update only their own task comments");
     }
 
@@ -819,9 +833,9 @@ const deleteTaskComment = async (req: Request): Promise<void> => {
     const commentId = req.params.commentId as string;
     const userId = req.user!.id;
 
-    const existingComment = await getScopedTaskCommentOrThrow(req, taskId, commentId, workspaceId);
+    const existingComment = await getScopedTaskCommentOrThrow(req.user!.id, req.workspaceRole!, taskId, commentId, workspaceId);
 
-    if (req.workspaceRole === "MEMBER" && existingComment.userId !== userId) {
+    if (req.workspaceRole === WorkspaceMemberRole.MEMBER && existingComment.userId !== userId) {
       throw new AppError(status.FORBIDDEN, "Members can delete only their own task comments");
     }
 
@@ -834,13 +848,15 @@ const deleteTaskComment = async (req: Request): Promise<void> => {
   }
 };
 
-const getTaskAttachments = async (req: Request): Promise<IPaginatedTaskAttachmentResponse> => {
+const getTaskAttachments = async (
+  workspaceId: string,
+  workspaceRole: string,
+  userId: string,
+  taskId: string,
+  query: ITaskAttachmentQuery
+): Promise<IPaginatedTaskAttachmentResponse> => {
   try {
-    const workspaceId = req.workspaceId!;
-    const taskId = req.params.taskId as string;
-    const query = req.query as unknown as ITaskAttachmentQuery;
-
-    await getScopedTaskOrThrow(req, taskId, workspaceId);
+    await getScopedTaskOrThrow(userId, workspaceRole, taskId, workspaceId);
 
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
@@ -852,7 +868,7 @@ const getTaskAttachments = async (req: Request): Promise<IPaginatedTaskAttachmen
       task: {
         deletedAt: null,
         project: { deletedAt: null },
-        ...buildMemberTaskAccessWhere(req),
+        ...buildMemberTaskAccessWhere(userId, workspaceRole),
       },
     };
 
@@ -890,7 +906,7 @@ const createTaskAttachment = async (req: Request): Promise<ITaskAttachmentRespon
     const file = req.file;
 
     await assertPlanFeatureEnabled(workspaceId, "tasks.attachments");
-    await assertTaskWriteAllowed(req, taskId, workspaceId);
+    await assertTaskWriteAllowed(req.user!.id, req.workspaceRole!, taskId, workspaceId);
 
     if (!file) {
       throw new AppError(status.BAD_REQUEST, "Attachment file is required");
@@ -944,13 +960,14 @@ const deleteTaskAttachment = async (req: Request): Promise<void> => {
     const userId = req.user!.id;
 
     const existingAttachment = await getScopedTaskAttachmentOrThrow(
-      req,
+      req.user!.id,
+      req.workspaceRole!,
       taskId,
       attachmentId,
       workspaceId
     );
 
-    if (req.workspaceRole === "MEMBER" && existingAttachment.uploadedById !== userId) {
+    if (req.workspaceRole === WorkspaceMemberRole.MEMBER && existingAttachment.uploadedById !== userId) {
       throw new AppError(status.FORBIDDEN, "Members can delete only their own task attachments");
     }
 

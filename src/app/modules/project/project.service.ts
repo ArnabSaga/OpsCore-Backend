@@ -1,6 +1,8 @@
 import { Request } from "express";
 import status from "http-status";
 import AppError from "../../errors/AppError";
+import { ProjectStatus } from "../../constants/task";
+import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../constants/role";
 import { prisma } from "../../lib/prisma";
 import {
   assertPlanFeatureEnabled,
@@ -28,13 +30,20 @@ const buildProjectBaseWhere = (workspaceId: string, includeArchived = false) => 
   };
 };
 
-const getScopedProjectOrThrow = async (req: Request, projectId: string, workspaceId: string) => {
+const getScopedProjectOrThrow = async (
+  userId: string,
+  workspaceRole: string,
+  projectId: string,
+  workspaceId: string
+) => {
   const project = await prisma.project.findFirst({
     where: {
       id: projectId,
       workspaceId,
       deletedAt: null,
-      ...(req.workspaceRole === "MEMBER" ? { members: { some: { userId: req.user!.id } } } : {}),
+      ...(workspaceRole === WorkspaceMemberRole.MEMBER
+        ? { members: { some: { userId } } }
+        : {}),
     },
     select: {
       id: true,
@@ -55,14 +64,15 @@ const getScopedProjectOrThrow = async (req: Request, projectId: string, workspac
 };
 
 const getProjects = async (
-  req: Request
+  workspaceId: string,
+  workspaceRole: string,
+  userId: string,
+  query: IProjectQuery
 ): Promise<{
   data: IProjectListItem[];
   meta: { page: number; limit: number; total: number; totalPages: number };
 }> => {
   try {
-    const workspaceId = req.workspaceId!;
-    const query = req.query as unknown as IProjectQuery;
 
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
@@ -76,9 +86,9 @@ const getProjects = async (
       ...buildProjectBaseWhere(workspaceId, archived),
     };
 
-    if (req.workspaceRole === "MEMBER") {
+    if (workspaceRole === WorkspaceMemberRole.MEMBER) {
       where.members = {
-        some: { userId: req.user!.id },
+        some: { userId },
       };
     }
 
@@ -153,7 +163,7 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
       customMessage: 'You have reached the "projects" limit for your current plan.',
     });
 
-    if (payload.status === "ARCHIVED") {
+    if (payload.status === ProjectStatus.ARCHIVED) {
       await assertPlanFeatureEnabled(workspaceId, "projects.archive");
     }
 
@@ -164,10 +174,10 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
         name: payload.name.trim(),
         description: payload.description?.trim(),
         clientName: payload.clientName?.trim(),
-        status: payload.status ?? "ACTIVE",
+        status: payload.status ?? ProjectStatus.ACTIVE,
         startDate: payload.startDate ? new Date(payload.startDate) : undefined,
         endDate: payload.endDate ? new Date(payload.endDate) : undefined,
-        ...(payload.status === "ARCHIVED" ? { archivedAt: new Date() } : {}),
+        ...(payload.status === ProjectStatus.ARCHIVED ? { archivedAt: new Date() } : {}),
       },
       include: {
         createdByUser: {
@@ -223,7 +233,7 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
     const workspaceId = req.workspaceId!;
     const projectId = req.params.projectId as string;
 
-    await getScopedProjectOrThrow(req, projectId, workspaceId);
+    await getScopedProjectOrThrow(req.user!.id, req.workspaceRole!, projectId, workspaceId);
 
     const project = await prisma.project.findFirst({
       where: {
@@ -298,7 +308,7 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
     const projectId = req.params.projectId as string;
     const payload = req.body as IUpdateProjectPayload;
 
-    const existingProject = await getScopedProjectOrThrow(req, projectId, workspaceId);
+    const existingProject = await getScopedProjectOrThrow(req.user!.id, req.workspaceRole!, projectId, workspaceId);
 
     const nextStartDate =
       payload.startDate !== undefined
@@ -318,7 +328,7 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
       throw new AppError(status.BAD_REQUEST, "End date cannot be earlier than start date");
     }
 
-    const shouldArchive = payload.archived === true || payload.status === "ARCHIVED";
+    const shouldArchive = payload.archived === true || payload.status === ProjectStatus.ARCHIVED;
     const shouldUnarchive = payload.archived === false && existingProject.archivedAt !== null;
 
     if (shouldArchive || shouldUnarchive) {
@@ -342,10 +352,10 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
         ...(payload.endDate !== undefined && {
           endDate: payload.endDate ? new Date(payload.endDate) : null,
         }),
-        ...(shouldArchive && { archivedAt: new Date(), status: "ARCHIVED" }),
+        ...(shouldArchive && { archivedAt: new Date(), status: ProjectStatus.ARCHIVED }),
         ...(shouldUnarchive && {
           archivedAt: null,
-          ...(payload.status === undefined ? { status: "ACTIVE" } : {}),
+          ...(payload.status === undefined ? { status: ProjectStatus.ACTIVE } : {}),
         }),
       },
       include: {
@@ -392,7 +402,7 @@ const deleteProject = async (req: Request): Promise<void> => {
     const workspaceId = req.workspaceId!;
     const projectId = req.params.projectId as string;
 
-    await getScopedProjectOrThrow(req, projectId, workspaceId);
+    await getScopedProjectOrThrow(req.user!.id, req.workspaceRole!, projectId, workspaceId);
 
     await prisma.$transaction(async (tx) => {
       await tx.project.update({
@@ -417,17 +427,18 @@ const deleteProject = async (req: Request): Promise<void> => {
 };
 
 const getProjectTasks = async (
-  req: Request
+  workspaceId: string,
+  workspaceRole: string,
+  userId: string,
+  projectId: string,
+  query: IProjectTaskQuery
 ): Promise<{
   data: IProjectTaskListItem[];
   meta: { page: number; limit: number; total: number; totalPages: number };
 }> => {
   try {
-    const workspaceId = req.workspaceId!;
-    const projectId = req.params.projectId as string;
-    const query = req.query as unknown as IProjectTaskQuery;
 
-    await getScopedProjectOrThrow(req, projectId, workspaceId);
+    await getScopedProjectOrThrow(userId, workspaceRole, projectId, workspaceId);
 
     const page = Math.max(Number(query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
@@ -499,7 +510,7 @@ const getProjectMembers = async (req: Request): Promise<IProjectMemberResponse[]
     const workspaceId = req.workspaceId!;
     const projectId = req.params.projectId as string;
 
-    await getScopedProjectOrThrow(req, projectId, workspaceId);
+    await getScopedProjectOrThrow(req.user!.id, req.workspaceRole!, projectId, workspaceId);
 
     const members = await prisma.projectMember.findMany({
       where: {
@@ -533,9 +544,9 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
     const { userIds } = req.body as IAssignProjectMembersPayload;
 
     await assertPlanFeatureEnabled(workspaceId, "projects.assignMembers");
-    const project = await getScopedProjectOrThrow(req, projectId, workspaceId);
+    const project = await getScopedProjectOrThrow(req.user!.id, req.workspaceRole!, projectId, workspaceId);
 
-    if (project.archivedAt || project.status === "ARCHIVED") {
+    if (project.archivedAt || project.status === ProjectStatus.ARCHIVED) {
       throw new AppError(status.BAD_REQUEST, "Cannot assign members to an archived project");
     }
 
@@ -543,7 +554,7 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
       where: {
         workspaceId,
         userId: { in: userIds },
-        status: "ACTIVE",
+        status: WorkspaceMemberStatus.ACTIVE,
       },
       select: {
         userId: true,

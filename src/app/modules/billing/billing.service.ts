@@ -1,7 +1,8 @@
 import { Request } from "express";
 import status from "http-status";
 import Stripe from "stripe";
-import { SubscriptionPlan, SubscriptionStatus } from "../../../generated/prisma/enums";
+import { SubscriptionPlan, SubscriptionStatus } from "../../constants/subscription";
+import { WorkspaceMemberRole } from "../../constants/role";
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import { resolveWorkspacePlanContext } from "../../utils/checkPlanLimit";
@@ -58,7 +59,7 @@ const ensureWorkspaceOwner = (req: Request) => {
     throw new AppError(status.UNAUTHORIZED, "Authentication is required");
   }
 
-  if (req.workspaceRole !== "OWNER") {
+  if (req.workspaceRole !== WorkspaceMemberRole.OWNER) {
     throw new AppError(status.FORBIDDEN, "Only workspace owners can manage billing");
   }
 };
@@ -164,6 +165,9 @@ const prepareCheckoutFlow = async (req: Request): Promise<IPreparedCheckoutRespo
     const billingInterval = normalizeBillingInterval(payload.billingInterval);
     const plan = payload.plan as SubscriptionPlan;
 
+    if (plan === SubscriptionPlan.ENTERPRISE) {
+      throw new AppError(status.BAD_REQUEST, "ENTERPRISE plan requires custom checkout");
+    }
     if (plan === SubscriptionPlan.FREE) {
       throw new AppError(status.BAD_REQUEST, "FREE plan does not require checkout");
     }

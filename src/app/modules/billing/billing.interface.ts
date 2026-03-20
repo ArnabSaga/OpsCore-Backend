@@ -1,4 +1,4 @@
-import { SubscriptionPlan, SubscriptionStatus } from "../../../generated/prisma/enums";
+import { SubscriptionPlan, SubscriptionStatus } from "../../constants/subscription";
 
 export interface IGetBillingHistoryQuery {
   limit?: number;
@@ -17,8 +17,8 @@ export interface ICreateCustomerPortalPayload {
 }
 
 export interface IResolvedPlanSummary {
-  basePlan: "FREE" | "PRO" | "ENTERPRISE";
-  effectivePlan: "FREE" | "PRO" | "ENTERPRISE";
+  basePlan: SubscriptionPlan;
+  effectivePlan: SubscriptionPlan;
   isTrialActive: boolean;
   trialStartsAt: Date | null;
   trialEndsAt: Date | null;

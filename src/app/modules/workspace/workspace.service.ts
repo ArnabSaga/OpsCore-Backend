@@ -1,7 +1,8 @@
 import { fromNodeHeaders } from "better-auth/node";
 import { Request } from "express";
 import status from "http-status";
-import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../../generated/prisma/enums";
+import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../constants/role";
+import { SubscriptionPlan } from "../../constants/subscription";
 import { DEFAULT_WORKSPACE_PLAN, PLAN_FEATURES } from "../../config/planFeatures";
 import AppError from "../../errors/AppError";
 import { auth } from "../../lib/auth";
@@ -100,8 +101,8 @@ const getMyWorkspaces = async (req: Request): Promise<IMyWorkspaceResponse[]> =>
     const planMetaMap = new Map<
       string,
       {
-        basePlan: "FREE" | "PRO" | "ENTERPRISE";
-        effectivePlan: "FREE" | "PRO" | "ENTERPRISE";
+        basePlan: SubscriptionPlan;
+        effectivePlan: SubscriptionPlan;
         isTrialActive: boolean;
         trialStartsAt: Date | null;
         trialEndsAt: Date | null;

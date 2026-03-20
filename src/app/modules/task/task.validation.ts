@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TaskPriority, TaskStatus } from "../../constants/task";
 
 const paginationQueryShape = {
   page: z.coerce.number().int().min(1).optional(),
@@ -41,8 +42,8 @@ const createTaskSchema = z.object({
     assignedToUserId: z
       .union([z.string().uuid("Assigned user ID must be a valid UUID"), z.null()])
       .optional(),
-    status: z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]).optional(),
-    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+    status: z.nativeEnum(TaskStatus).optional(),
+    priority: z.nativeEnum(TaskPriority).optional(),
     dueDate: z.string().datetime().optional(),
   }),
 });
@@ -66,8 +67,8 @@ const updateTaskSchema = z.object({
       assignedToUserId: z
         .union([z.string().uuid("Assigned user ID must be a valid UUID"), z.null()])
         .optional(),
-      status: z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]).optional(),
-      priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+      status: z.nativeEnum(TaskStatus).optional(),
+      priority: z.nativeEnum(TaskPriority).optional(),
       dueDate: z.string().datetime().nullable().optional(),
     })
     .refine((data) => Object.keys(data).length > 0, {
@@ -82,8 +83,8 @@ const getTasksQuerySchema = z.object({
       projectId: z.string().uuid("Project ID must be a valid UUID").optional(),
       assignedToUserId: z.string().uuid("Assigned user ID must be a valid UUID").optional(),
       assignedToMe: z.enum(["true", "false"]).optional(),
-      status: z.enum(["TODO", "IN_PROGRESS", "REVIEW", "DONE"]).optional(),
-      priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
+      status: z.nativeEnum(TaskStatus).optional(),
+      priority: z.nativeEnum(TaskPriority).optional(),
       overdue: z.enum(["true", "false"]).optional(),
       dueFrom: z.string().datetime().optional(),
       dueTo: z.string().datetime().optional(),
