@@ -206,19 +206,30 @@ workspace_id
 
 ---
 
-# 🔐 Authentication
+# 🔐 Authentication (Better Auth)
+
+> These routes are handled by Better Auth (Google login, session, etc.)
 
 | Method | Endpoint | Description |
 |------|------|------|
-| POST | `/api/auth/register` | Register user and create workspace |
-| POST | `/api/auth/login` | Login user |
-| POST | `/api/auth/logout` | Logout user |
-| GET | `/api/auth/me` | Get authenticated user |
-| POST | `/api/auth/forgot-password` | Send password reset link |
-| POST | `/api/auth/reset-password` | Reset password |
-| POST | `/api/auth/change-password` | Change password for logged-in user |
-| POST | `/api/auth/verify-email` | Verify user email |
-| POST | `/api/auth/resend-verification` | Resend verification email |
+| ALL | `/api/auth/*` | Better Auth handler (login, OAuth, session, etc.) |
+
+---
+
+# 🔐 Authentication (Custom Logic)
+
+| Method | Endpoint | Description |
+|------|------|------|
+| POST | `/api/v1/auth/register` | Register user and create workspace |
+| POST | `/api/v1/auth/login` | Login user |
+| POST | `/api/v1/auth/logout` | Logout user |
+| GET | `/api/v1/auth/me` | Get authenticated user |
+| POST | `/api/v1/auth/forgot-password` | Send password reset link |
+| POST | `/api/v1/auth/reset-password` | Reset password |
+| POST | `/api/v1/auth/change-password` | Change password (legacy/compatibility) |
+| POST | `/api/v1/auth/verify-email` | Verify user email |
+| POST | `/api/v1/auth/resend-verification` | Resend verification email |
+| PATCH | `/api/v1/auth/workspace/switch` | Switch active workspace (internal route) |
 
 ---
 
@@ -226,24 +237,22 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/workspaces` | Get all workspaces of authenticated user |
-| POST | `/api/workspaces` | Create a new workspace |
-| GET | `/api/workspaces/:workspaceId` | Get single workspace details |
-| PATCH | `/api/workspaces/:workspaceId` | Update workspace settings |
-| DELETE | `/api/workspaces/:workspaceId` | Delete workspace (Owner only) |
-| POST | `/api/workspaces/:workspaceId/switch` | Switch active workspace |
+| GET | `/api/v1/workspaces` | Get all workspaces of authenticated user |
+| POST | `/api/v1/workspaces` | Create a new workspace |
+| GET | `/api/v1/workspaces/:workspaceId` | Get single workspace details |
+| PATCH | `/api/v1/workspaces/:workspaceId` | Update workspace settings |
+| DELETE | `/api/v1/workspaces/:workspaceId` | Delete workspace (Owner only) |
+| POST | `/api/v1/workspaces/:workspaceId/switch` | Switch active workspace |
 
 ---
 
 # 👥 Workspace Members
 
-> Role belongs to the **workspace membership**, not the global user.
-
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/workspaces/:workspaceId/members` | Get all members of a workspace |
-| PATCH | `/api/workspaces/:workspaceId/members/:memberId` | Update member role/status |
-| DELETE | `/api/workspaces/:workspaceId/members/:memberId` | Remove member from workspace |
+| GET | `/api/v1/workspaces/:workspaceId/members` | Get all members of a workspace |
+| PATCH | `/api/v1/workspaces/:workspaceId/members/:memberId` | Update member role/status |
+| DELETE | `/api/v1/workspaces/:workspaceId/members/:memberId` | Remove member from workspace |
 
 ---
 
@@ -251,11 +260,11 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/workspaces/:workspaceId/invitations` | Get all workspace invitations |
-| POST | `/api/workspaces/:workspaceId/invitations` | Invite a user to workspace |
-| DELETE | `/api/workspaces/:workspaceId/invitations/:invitationId` | Cancel invitation |
-| POST | `/api/invitations/:token/accept` | Accept workspace invitation |
-| POST | `/api/invitations/:token/decline` | Decline workspace invitation |
+| GET | `/api/v1/workspaces/:workspaceId/invitations` | Get all workspace invitations |
+| POST | `/api/v1/workspaces/:workspaceId/invitations` | Invite a user to workspace |
+| DELETE | `/api/v1/workspaces/:workspaceId/invitations/:invitationId` | Cancel invitation |
+| POST | `/api/v1/invitations/:token/accept` | Accept workspace invitation |
+| POST | `/api/v1/invitations/:token/decline` | Decline workspace invitation |
 
 ---
 
@@ -263,19 +272,19 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/projects` | Get all projects in active workspace |
-| POST | `/api/projects` | Create a project |
-| GET | `/api/projects/:projectId` | Get single project details |
-| PATCH | `/api/projects/:projectId` | Update project |
-| DELETE | `/api/projects/:projectId` | Delete project |
+| GET | `/api/v1/projects` | Get all projects in active workspace |
+| POST | `/api/v1/projects` | Create a project |
+| GET | `/api/v1/projects/:projectId` | Get single project details |
+| PATCH | `/api/v1/projects/:projectId` | Update project |
+| DELETE | `/api/v1/projects/:projectId` | Delete project |
 
 ### Nested Project Routes
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/projects/:projectId/tasks` | Get tasks of a specific project |
-| GET | `/api/projects/:projectId/members` | Get project members |
-| POST | `/api/projects/:projectId/members` | Assign members to project |
+| GET | `/api/v1/projects/:projectId/tasks` | Get tasks of a specific project |
+| GET | `/api/v1/projects/:projectId/members` | Get project members |
+| POST | `/api/v1/projects/:projectId/members` | Assign members to project |
 
 ---
 
@@ -283,23 +292,23 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/tasks` | Get all tasks in active workspace |
-| POST | `/api/tasks` | Create a task |
-| GET | `/api/tasks/:taskId` | Get single task details |
-| PATCH | `/api/tasks/:taskId` | Update task |
-| DELETE | `/api/tasks/:taskId` | Delete task |
+| GET | `/api/v1/tasks` | Get all tasks in active workspace |
+| POST | `/api/v1/tasks` | Create a task |
+| GET | `/api/v1/tasks/:taskId` | Get single task details |
+| PATCH | `/api/v1/tasks/:taskId` | Update task |
+| DELETE | `/api/v1/tasks/:taskId` | Delete task |
 
 ### Task Extensions
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/tasks/:taskId/comments` | Get task comments |
-| POST | `/api/tasks/:taskId/comments` | Add comment to task |
-| PATCH | `/api/tasks/:taskId/comments/:commentId` | Update comment |
-| DELETE | `/api/tasks/:taskId/comments/:commentId` | Delete comment |
-| GET | `/api/tasks/:taskId/attachments` | Get task attachments |
-| POST | `/api/tasks/:taskId/attachments` | Upload task attachment |
-| DELETE | `/api/tasks/:taskId/attachments/:attachmentId` | Delete attachment |
+| GET | `/api/v1/tasks/:taskId/comments` | Get task comments |
+| POST | `/api/v1/tasks/:taskId/comments` | Add comment to task |
+| PATCH | `/api/v1/tasks/:taskId/comments/:commentId` | Update comment |
+| DELETE | `/api/v1/tasks/:taskId/comments/:commentId` | Delete comment |
+| GET | `/api/v1/tasks/:taskId/attachments` | Get task attachments |
+| POST | `/api/v1/tasks/:taskId/attachments` | Upload task attachment |
+| DELETE | `/api/v1/tasks/:taskId/attachments/:attachmentId` | Delete attachment |
 
 ---
 
@@ -307,14 +316,14 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/invoices` | Get all invoices in active workspace |
-| POST | `/api/invoices` | Create invoice |
-| GET | `/api/invoices/:invoiceId` | Get invoice details |
-| PATCH | `/api/invoices/:invoiceId` | Update invoice |
-| DELETE | `/api/invoices/:invoiceId` | Delete or archive invoice |
-| POST | `/api/invoices/:invoiceId/send` | Send invoice |
-| POST | `/api/invoices/:invoiceId/mark-paid` | Mark invoice as paid |
-| POST | `/api/invoices/:invoiceId/cancel` | Cancel invoice |
+| GET | `/api/v1/invoices` | Get all invoices in active workspace |
+| POST | `/api/v1/invoices` | Create invoice |
+| GET | `/api/v1/invoices/:invoiceId` | Get invoice details |
+| PATCH | `/api/v1/invoices/:invoiceId` | Update invoice |
+| DELETE | `/api/v1/invoices/:invoiceId` | Delete or archive invoice |
+| POST | `/api/v1/invoices/:invoiceId/send` | Send invoice |
+| POST | `/api/v1/invoices/:invoiceId/mark-paid` | Mark invoice as paid |
+| POST | `/api/v1/invoices/:invoiceId/cancel` | Cancel invoice |
 
 ---
 
@@ -322,11 +331,11 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/billing/subscription` | Get current workspace subscription |
-| POST | `/api/billing/checkout-session` | Create Stripe checkout session |
-| POST | `/api/billing/customer-portal` | Open Stripe billing portal |
-| GET | `/api/billing/invoices` | Get billing/payment history |
-| POST | `/api/webhooks/stripe` | Handle Stripe webhooks |
+| GET | `/api/v1/billing/subscription` | Get current workspace subscription |
+| POST | `/api/v1/billing/checkout-session` | Create Stripe checkout session |
+| POST | `/api/v1/billing/customer-portal` | Open Stripe billing portal |
+| GET | `/api/v1/billing/invoices` | Get billing/payment history |
+| POST | `/api/v1/webhooks/stripe` | Handle Stripe webhooks |
 
 ---
 
@@ -334,8 +343,8 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/dashboard/overview` | Get workspace dashboard summary |
-| GET | `/api/dashboard/activity` | Get recent workspace activity |
+| GET | `/api/v1/dashboard/overview` | Get workspace dashboard summary |
+| GET | `/api/v1/dashboard/activity` | Get recent workspace activity |
 
 ---
 
@@ -343,8 +352,8 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/analytics/projects` | Get project analytics |
-| GET | `/api/analytics/revenue` | Get revenue analytics |
+| GET | `/api/v1/analytics/projects` | Get project analytics |
+| GET | `/api/v1/analytics/revenue` | Get revenue analytics |
 
 ---
 
@@ -352,9 +361,9 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/health` | Check API server health status |
-| GET | `/api/health/db` | Check database connectivity status |
-| GET | `/api/health/ready` | Readiness probe for application |
+| GET | `/api/v1/health` | Check API server health status |
+| GET | `/api/v1/health/db` | Check database connectivity status |
+| GET | `/api/v1/health/ready` | Readiness probe for application |
 
 ---
 
@@ -362,8 +371,8 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/activity-logs` | Get workspace activity logs |
-| GET | `/api/activity-logs/:logId` | Get specific activity log |
+| GET | `/api/v1/activity-logs` | Get workspace activity logs |
+| GET | `/api/v1/activity-logs/:logId` | Get specific activity log |
 
 ---
 
@@ -371,9 +380,9 @@ workspace_id
 
 | Method | Endpoint | Description |
 |------|------|------|
-| GET | `/api/account/profile` | Get logged-in user profile |
-| PATCH | `/api/account/profile` | Update profile |
-| PATCH | `/api/account/password` | Update password |
+| GET | `/api/v1/account/profile` | Get logged-in user profile |
+| PATCH | `/api/v1/account/profile` | Update profile |
+| PATCH | `/api/v1/account/password` | Update password (primary route) |
 
 ---
 ## Golden Rule of Tenant Isolation
