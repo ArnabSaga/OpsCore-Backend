@@ -22,9 +22,9 @@
     "express",
     "prisma",
     "typescript",
-    "apollo-gears"
+    "ArnabSaga"
   ],
-  "author": "",
+  "author": "ArnabSaga",
   "license": "ISC",
   "dependencies": {
     "@prisma/adapter-pg": "^7.5.0",
