@@ -9,6 +9,12 @@ export interface IUpdateProfilePayload {
   removeImage?: "true" | "false";
 }
 
+export interface IUpdatePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export interface IProfileWorkspaceMember {
   role: WorkspaceMemberRole;
   status: WorkspaceMemberStatus;

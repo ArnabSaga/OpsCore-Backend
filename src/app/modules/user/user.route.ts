@@ -18,4 +18,10 @@ router.patch(
   UserController.updateProfile
 );
 
+router.patch(
+  "/password",
+  validateRequest(UserValidation.updatePasswordValidationSchema),
+  UserController.updatePassword
+);
+
 export const UserRoutes = router;

@@ -1,10 +1,12 @@
+import { fromNodeHeaders } from "better-auth/node";
 import { Request } from "express";
 import status from "http-status";
 import { WorkspaceMemberStatus } from "../../../generated/prisma/enums";
 import AppError from "../../errors/AppError";
+import { auth } from "../../lib/auth";
 import { destroyCloudinaryAssetByUrl } from "../../lib/cloudinary";
 import { prisma } from "../../lib/prisma";
-import { IProfileResponse, IUpdateProfilePayload } from "./user.interface";
+import { IProfileResponse, IUpdatePasswordPayload, IUpdateProfilePayload } from "./user.interface";
 
 const profileSelect = {
   id: true,
@@ -36,6 +38,16 @@ const profileSelect = {
       joinedAt: "asc" as const,
     },
   },
+};
+
+const throwIfFailed = async (response: globalThis.Response, fallbackMsg: string): Promise<void> => {
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+
+    const message = (errorBody as { message?: string } | null)?.message ?? fallbackMsg;
+
+    throw new AppError(response.status || status.BAD_REQUEST, message);
+  }
 };
 
 const getProfile = async (req: Request): Promise<IProfileResponse> => {
@@ -112,7 +124,33 @@ const updateProfile = async (req: Request): Promise<IProfileResponse> => {
   }
 };
 
+const updatePassword = async (req: Request): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      throw new AppError(status.UNAUTHORIZED, "Not authenticated");
+    }
+
+    const { currentPassword, newPassword } = req.body as IUpdatePasswordPayload;
+
+    const response = await auth.api.changePassword({
+      body: {
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: true,
+      },
+      headers: fromNodeHeaders(req.headers),
+      asResponse: true,
+    });
+
+    await throwIfFailed(response, "Password update failed");
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update password");
+  }
+};
+
 export const UserService = {
   getProfile,
   updateProfile,
+  updatePassword,
 };
