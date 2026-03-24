@@ -18,12 +18,17 @@ import { MAX_FILE_SIZE } from "../constants/upload";
 
 const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (envVars.NODE_ENV === "development") {
-    if (err instanceof ZodError) {
-      console.error(`[Zod Validation Error]:`, err.issues);
+    const method = req.method;
+    const url = req.originalUrl || req.url;
+
+    if (err instanceof AppError && err.statusCode === status.UNAUTHORIZED) {
+      console.warn(`[${method} ${url}] 🔓 ${err.message}`);
+    } else if (err instanceof ZodError) {
+      console.error(`[${method} ${url}] [Zod Validation Error]:`, err.issues);
     } else if (err instanceof SyntaxError && "body" in err) {
-      console.error("[Syntax Error in Request Body]:", err.message);
+      console.error(`[${method} ${url}] [Syntax Error in Request Body]:`, err.message);
     } else {
-      console.error(err);
+      console.error(`[${method} ${url}] Error:`, err);
     }
   }
 
