@@ -11,7 +11,7 @@ const router = Router();
 
 router.use(requireAuth);
 
-router.get("/", WorkspaceController.getMyWorkspaces);
+router.get("/my", WorkspaceController.getMyWorkspaces);
 
 router.post(
   "/",

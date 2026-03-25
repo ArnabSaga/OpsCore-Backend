@@ -102,6 +102,18 @@ const register = async (req: Request): Promise<IRegisterServiceResponse> => {
             addedByUserId: userId,
           },
         });
+        
+        // Initialize active workspace in session if session exists
+        const sessionData = await auth.api.getSession({
+          headers: fromNodeHeaders(req.headers),
+        });
+
+        if (sessionData?.session?.id) {
+          await tx.session.update({
+            where: { id: sessionData.session.id },
+            data: { activeWorkspaceId: createdWorkspace.id },
+          });
+        }
 
         return createdWorkspace;
       });
@@ -166,6 +178,27 @@ const login = async (req: Request): Promise<ILoginServiceResponse> => {
 
     if (!dbUser.isActive) {
       throw new AppError(status.FORBIDDEN, "User account is inactive");
+    }
+
+    // Initialize active workspace in session if not already set
+    const sessionData = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
+
+    if (sessionData?.session?.id) {
+      // Find the first available workspace for this user
+      const firstWorkspace = await prisma.workspaceMember.findFirst({
+        where: { userId: dbUser.id, status: WorkspaceMemberStatus.ACTIVE },
+        select: { workspaceId: true },
+        orderBy: { createdAt: "asc" },
+      });
+
+      if (firstWorkspace) {
+        await prisma.session.update({
+          where: { id: sessionData.session.id },
+          data: { activeWorkspaceId: firstWorkspace.workspaceId },
+        });
+      }
     }
 
     return {
@@ -250,9 +283,30 @@ const getMe = async (req: Request): Promise<IMeResponse> => {
       throw new AppError(status.NOT_FOUND, "User not found");
     }
 
+    const activeWorkspaceId = session?.session?.id
+      ? ((
+          await prisma.session.findUnique({
+            where: { id: session.session.id },
+            select: { activeWorkspaceId: true },
+          })
+        )?.activeWorkspaceId ?? null)
+      : null;
+
+    const activeWorkspace = activeWorkspaceId
+      ? user.workspaceMembers.find((m) => m.workspace.id === activeWorkspaceId)?.workspace
+      : null;
+
     return {
       ...user,
       systemRole: String(user.systemRole),
+      activeWorkspaceId,
+      activeWorkspace: activeWorkspace
+        ? {
+            id: activeWorkspace.id,
+            name: activeWorkspace.name,
+            slug: activeWorkspace.slug,
+          }
+        : null,
       workspaceMembers: user.workspaceMembers.map((member) => ({
         ...member,
         role: String(member.role),
@@ -448,6 +502,25 @@ const googleLoginSuccess = async (session: Record<string, any>) => {
         },
       });
     });
+  }
+
+  // Sync active workspace to session for OAuth users
+  const sessionData = await auth.api.getSession({
+    headers: fromNodeHeaders({ cookie: `better-auth.session_token=${session.session.sessionToken}` }),
+  });
+
+  if (sessionData?.session?.id) {
+    const finalMembership = await prisma.workspaceMember.findFirst({
+      where: { userId, status: WorkspaceMemberStatus.ACTIVE },
+      select: { workspaceId: true },
+    });
+
+    if (finalMembership) {
+      await prisma.session.update({
+        where: { id: sessionData.session.id },
+        data: { activeWorkspaceId: finalMembership.workspaceId },
+      });
+    }
   }
 };
 

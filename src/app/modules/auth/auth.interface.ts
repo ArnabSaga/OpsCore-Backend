@@ -84,6 +84,12 @@ export interface IMeResponse {
   systemRole: string;
   isActive: boolean;
   createdAt: Date;
+  activeWorkspaceId: string | null;
+  activeWorkspace: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
   workspaceMembers: {
     role: string;
     status: string;
