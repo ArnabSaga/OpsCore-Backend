@@ -1,8 +1,10 @@
 import { ErrorRequestHandler } from "express";
 import status from "http-status";
+import multer from "multer";
 import { ZodError } from "zod";
 import { Prisma } from "../../generated/prisma/client";
 import { envVars } from "../config/env";
+import { MAX_FILE_SIZE } from "../constants/upload";
 import AppError from "../errors/AppError";
 import {
   handlePrismaClientInitializationError,
@@ -12,9 +14,7 @@ import {
   handlePrismaClientValidationError,
 } from "../errors/handlePrismaErrors";
 import { TErrorSources } from "../interfaces/error.interface";
-import multer from "multer";
 import { destroyCloudinaryAssetByUrl } from "../lib/cloudinary";
-import { MAX_FILE_SIZE } from "../constants/upload";
 
 const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (envVars.NODE_ENV === "development") {
@@ -22,7 +22,9 @@ const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     const url = req.originalUrl || req.url;
 
     if (err instanceof AppError && err.statusCode === status.UNAUTHORIZED) {
-      console.warn(`[${method} ${url}] 🔓 ${err.message}`);
+      if (!url.includes("/api/v1/auth/me")) {
+        console.warn(`[${method} ${url}] 🔓 ${err.message}`);
+      }
     } else if (err instanceof ZodError) {
       console.error(`[${method} ${url}] [Zod Validation Error]:`, err.issues);
     } else if (err instanceof SyntaxError && "body" in err) {
