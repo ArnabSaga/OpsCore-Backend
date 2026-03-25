@@ -13,7 +13,18 @@ const getDashboardActivitySchema = z.object({
     .strict(),
 });
 
+const getDashboardMetricsSchema = z.object({
+  query: z
+    .object({
+      period: z
+        .enum(["last_7_days", "last_30_days", "last_3_months", "last_12_months"])
+        .optional(),
+    })
+    .strict(),
+});
+
 export const DashboardValidation = {
   getDashboardOverviewSchema,
   getDashboardActivitySchema,
+  getDashboardMetricsSchema,
 };

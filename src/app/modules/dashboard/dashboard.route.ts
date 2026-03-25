@@ -25,4 +25,11 @@ router.get(
   DashboardController.getActivity
 );
 
+router.get(
+  "/metrics",
+  requireFeature("dashboard.overview"),
+  validateRequest(DashboardValidation.getDashboardMetricsSchema),
+  DashboardController.getMetrics
+);
+
 export const DashboardRoutes = router;

@@ -13,6 +13,8 @@ import {
   IDashboardActivityQuery,
   IDashboardActivityResponse,
   IDashboardInvoiceSummary,
+  IDashboardMetricsQuery,
+  IDashboardMetricsResponse,
   IDashboardOverviewQuery,
   IDashboardOverviewResponse,
 } from "./dashboard.interface";
@@ -441,7 +443,138 @@ const getActivity = async (
   };
 };
 
+const getMetrics = async (
+  req: Request,
+  query: IDashboardMetricsQuery
+): Promise<IDashboardMetricsResponse> => {
+  if (!req.user || !req.workspaceId || !req.workspaceRole) {
+    throw new AppError(status.UNAUTHORIZED, "Dashboard metrics requires authentication");
+  }
+
+  let days = 30;
+  switch (query.period) {
+    case "last_7_days":
+      days = 7;
+      break;
+    case "last_3_months":
+      days = 90;
+      break;
+    case "last_12_months":
+      days = 365;
+      break;
+    case "last_30_days":
+    default:
+      days = 30;
+      break;
+  }
+
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  startDate.setHours(0, 0, 0, 0);
+
+  const formatKey = (d: Date) => {
+    if (days > 90) return d.toISOString().substring(0, 7);
+    return d.toISOString().split("T")[0];
+  };
+
+  const projectWhere = buildVisibleProjectWhere(req);
+  const taskWhere = buildVisibleTaskWhere(req);
+  const invoiceWhere = buildInvoiceWhereForRole(req);
+
+  const [createdProjects, completedProjects, createdTasks, completedTasks, paidInvoices] =
+    await Promise.all([
+      prisma.project.findMany({
+        where: { ...projectWhere, createdAt: { gte: startDate, lte: endDate } },
+        select: { createdAt: true },
+      }),
+      prisma.project.findMany({
+        where: {
+          ...projectWhere,
+          status: ProjectStatus.COMPLETED,
+          updatedAt: { gte: startDate, lte: endDate },
+        },
+        select: { updatedAt: true },
+      }),
+      prisma.task.findMany({
+        where: { ...taskWhere, createdAt: { gte: startDate, lte: endDate } },
+        select: { createdAt: true },
+      }),
+      prisma.task.findMany({
+        where: {
+          ...taskWhere,
+          status: TaskStatus.DONE,
+          updatedAt: { gte: startDate, lte: endDate },
+        },
+        select: { updatedAt: true },
+      }),
+      invoiceWhere
+        ? prisma.invoice.findMany({
+            where: {
+              ...invoiceWhere,
+              status: InvoiceStatus.PAID,
+              updatedAt: { gte: startDate, lte: endDate },
+            },
+            select: { updatedAt: true, amount: true, currency: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+  const projectsMap = new Map<string, { date: string; created: number; completed: number }>();
+  const tasksMap = new Map<string, { date: string; created: number; completed: number }>();
+  const revenueMap = new Map<string, { date: string; amount: number; currency: string }>();
+
+  // Fill project created
+  createdProjects.forEach((p) => {
+    const key = formatKey(p.createdAt);
+    const existing = projectsMap.get(key) || { date: key, created: 0, completed: 0 };
+    existing.created += 1;
+    projectsMap.set(key, existing);
+  });
+  // Fill project completed
+  completedProjects.forEach((p) => {
+    const key = formatKey(p.updatedAt);
+    const existing = projectsMap.get(key) || { date: key, created: 0, completed: 0 };
+    existing.completed += 1;
+    projectsMap.set(key, existing);
+  });
+
+  // Fill task created
+  createdTasks.forEach((t) => {
+    const key = formatKey(t.createdAt);
+    const existing = tasksMap.get(key) || { date: key, created: 0, completed: 0 };
+    existing.created += 1;
+    tasksMap.set(key, existing);
+  });
+  // Fill task completed
+  completedTasks.forEach((t) => {
+    const key = formatKey(t.updatedAt);
+    const existing = tasksMap.get(key) || { date: key, created: 0, completed: 0 };
+    existing.completed += 1;
+    tasksMap.set(key, existing);
+  });
+
+  // Fill revenue
+  paidInvoices.forEach((i) => {
+    const key = formatKey(i.updatedAt) + "_" + i.currency;
+    const existing = revenueMap.get(key) || {
+      date: formatKey(i.updatedAt),
+      amount: 0,
+      currency: i.currency,
+    };
+    existing.amount += Number(i.amount);
+    revenueMap.set(key, existing);
+  });
+
+  return {
+    revenue: Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    projects: Array.from(projectsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    tasks: Array.from(tasksMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+  };
+};
+
 export const DashboardService = {
   getOverview,
   getActivity,
+  getMetrics,
 };

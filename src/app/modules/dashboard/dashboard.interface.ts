@@ -88,3 +88,25 @@ export interface IDashboardActivityResponse {
     totalPages: number;
   };
 }
+
+export interface IDashboardMetricsQuery {
+  period?: "last_7_days" | "last_30_days" | "last_3_months" | "last_12_months";
+}
+
+export interface ITimeSeriesRevenueDataPoint {
+  date: string;
+  amount: number;
+  currency: string;
+}
+
+export interface ITimeSeriesDataPoint {
+  date: string;
+  created: number;
+  completed: number;
+}
+
+export interface IDashboardMetricsResponse {
+  revenue: ITimeSeriesRevenueDataPoint[];
+  projects: ITimeSeriesDataPoint[];
+  tasks: ITimeSeriesDataPoint[];
+}
