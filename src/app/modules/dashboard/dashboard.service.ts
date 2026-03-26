@@ -10,13 +10,19 @@ import { resolveWorkspacePlanContext } from "../../utils/checkPlanLimit";
 import { formatMoney } from "../invoice/invoice.utils";
 import {
   IDashboardActivityItem,
-  IDashboardActivityQuery,
-  IDashboardActivityResponse,
-  IDashboardInvoiceSummary,
-  IDashboardMetricsQuery,
-  IDashboardMetricsResponse,
-  IDashboardOverviewQuery,
-  IDashboardOverviewResponse,
+  IWorkspaceDashboardActivityQuery,
+  IWorkspaceDashboardActivityResponse,
+  IWorkspaceDashboardInvoiceSummary,
+  IWorkspaceDashboardMetricsQuery,
+  IWorkspaceDashboardMetricsResponse,
+  IWorkspaceDashboardOverviewQuery,
+  IWorkspaceDashboardOverviewResponse,
+  IPlatformDashboardActivityQuery,
+  IPlatformDashboardActivityResponse,
+  IPlatformDashboardMetricsQuery,
+  IPlatformDashboardMetricsResponse,
+  IPlatformDashboardOverviewQuery,
+  IPlatformDashboardOverviewResponse,
 } from "./dashboard.interface";
 
 const buildTodayRange = () => {
@@ -155,7 +161,7 @@ const buildInvoiceWhereForRole = (req: Request): Prisma.InvoiceWhereInput | null
 
 const getInvoiceSummary = async (
   where: Prisma.InvoiceWhereInput
-): Promise<IDashboardInvoiceSummary> => {
+): Promise<IWorkspaceDashboardInvoiceSummary> => {
   const [total, groupedStatuses, collectedRows, outstandingRows] = await Promise.all([
     prisma.invoice.count({ where }),
     prisma.invoice.groupBy({
@@ -239,8 +245,8 @@ const getInvoiceSummary = async (
 
 const getOverview = async (
   req: Request,
-  _query: IDashboardOverviewQuery
-): Promise<IDashboardOverviewResponse> => {
+  _query: IWorkspaceDashboardOverviewQuery
+): Promise<IWorkspaceDashboardOverviewResponse> => {
   if (!req.user || !req.workspaceId || !req.workspaceRole) {
     throw new AppError(status.UNAUTHORIZED, "Dashboard access requires authentication");
   }
@@ -341,7 +347,7 @@ const getOverview = async (
       slug: workspace.slug,
       role,
     },
-    subscription: {
+    subscription: isMember ? null : {
       basePlan: planContext.basePlan as SubscriptionPlan,
       effectivePlan: planContext.effectivePlan as SubscriptionPlan,
       isTrialActive: planContext.isTrialActive,
@@ -367,14 +373,14 @@ const getOverview = async (
       assignedToMe: assignedToMeTasks,
       createdByMe: createdByMeTasks,
     },
-    invoices: invoiceSummary,
+    invoices: isMember ? null : invoiceSummary,
   };
 };
 
 const getActivity = async (
   req: Request,
-  query: IDashboardActivityQuery
-): Promise<IDashboardActivityResponse> => {
+  query: IWorkspaceDashboardActivityQuery
+): Promise<IWorkspaceDashboardActivityResponse> => {
   if (!req.user || !req.workspaceId || !req.workspaceRole) {
     throw new AppError(status.UNAUTHORIZED, "Dashboard activity requires authentication");
   }
@@ -445,8 +451,8 @@ const getActivity = async (
 
 const getMetrics = async (
   req: Request,
-  query: IDashboardMetricsQuery
-): Promise<IDashboardMetricsResponse> => {
+  query: IWorkspaceDashboardMetricsQuery
+): Promise<IWorkspaceDashboardMetricsResponse> => {
   if (!req.user || !req.workspaceId || !req.workspaceRole) {
     throw new AppError(status.UNAUTHORIZED, "Dashboard metrics requires authentication");
   }
@@ -567,9 +573,216 @@ const getMetrics = async (
   });
 
   return {
-    revenue: Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    revenue: req.workspaceRole === WorkspaceMemberRole.MEMBER ? [] : Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
     projects: Array.from(projectsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
     tasks: Array.from(tasksMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+  };
+};
+
+const getPlatformOverview = async (
+  req: Request,
+  _query: IPlatformDashboardOverviewQuery
+): Promise<IPlatformDashboardOverviewResponse> => {
+  const [
+    totalWorkspaces,
+    activeWorkspaces,
+    totalUsers,
+    activeUsers,
+    paidSubscriptions,
+    trialSubscriptions,
+    totalInvoices,
+    overdueInvoices,
+  ] = await Promise.all([
+    prisma.workspace.count({ where: { deletedAt: null } }),
+    prisma.workspace.count({
+      where: {
+        deletedAt: null,
+        subscriptions: { some: { status: "ACTIVE" } },
+      },
+    }),
+    prisma.user.count({ where: { isDeleted: false } }),
+    prisma.user.count({ where: { isDeleted: false, isActive: true } }),
+    prisma.subscription.count({ where: { status: "ACTIVE" } }),
+    prisma.workspace.count({ where: { trialEndsAt: { gt: new Date() } } }),
+    prisma.invoice.count({ where: { deletedAt: null } }),
+    prisma.invoice.count({ where: { deletedAt: null, status: InvoiceStatus.OVERDUE } }),
+  ]);
+
+  return {
+    scope: "platform",
+    workspaces: { total: totalWorkspaces, active: activeWorkspaces },
+    users: { total: totalUsers, active: activeUsers },
+    subscriptions: { paid: paidSubscriptions, trial: trialSubscriptions },
+    invoices: { total: totalInvoices, overdue: overdueInvoices },
+  };
+};
+
+const getPlatformActivity = async (
+  req: Request,
+  query: IPlatformDashboardActivityQuery
+): Promise<IPlatformDashboardActivityResponse> => {
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 50);
+  const skip = (page - 1) * limit;
+
+  const [rows, total] = await Promise.all([
+    prisma.activityLog.findMany({
+      skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        metadata: true,
+        createdAt: true,
+        user: {
+          select: { id: true, name: true, email: true, image: true },
+        },
+      },
+    }),
+    prisma.activityLog.count(),
+  ]);
+
+  const data: IDashboardActivityItem[] = rows.map((row) => ({
+    id: row.id,
+    action: row.action,
+    entityType: row.entityType,
+    entityId: row.entityId ?? null,
+    metadata: sanitizeActivityMetadata(row.metadata),
+    createdAt: row.createdAt,
+    actor: {
+      id: row.user.id,
+      name: row.user.name,
+      email: row.user.email,
+      image: row.user.image,
+    },
+  }));
+
+  return {
+    data,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  };
+};
+
+const getPlatformMetrics = async (
+  req: Request,
+  query: IPlatformDashboardMetricsQuery
+): Promise<IPlatformDashboardMetricsResponse> => {
+  let days = 30;
+  switch (query.period) {
+    case "last_7_days":
+      days = 7;
+      break;
+    case "last_3_months":
+      days = 90;
+      break;
+    case "last_12_months":
+      days = 365;
+      break;
+    case "last_30_days":
+    default:
+      days = 30;
+      break;
+  }
+
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  startDate.setHours(0, 0, 0, 0);
+
+  const formatKey = (d: Date) => {
+    if (days > 90) return d.toISOString().substring(0, 7);
+    return d.toISOString().split("T")[0];
+  };
+
+  const [
+    createdWorkspaces,
+    createdUsers,
+    createdSubscriptions,
+    createdInvoices,
+    paidInvoices,
+  ] = await Promise.all([
+    prisma.workspace.findMany({
+      where: { createdAt: { gte: startDate, lte: endDate } },
+      select: { createdAt: true },
+    }),
+    prisma.user.findMany({
+      where: { createdAt: { gte: startDate, lte: endDate } },
+      select: { createdAt: true },
+    }),
+    prisma.subscription.findMany({
+      where: { createdAt: { gte: startDate, lte: endDate } },
+      select: { createdAt: true, status: true },
+    }),
+    prisma.invoice.findMany({
+      where: { createdAt: { gte: startDate, lte: endDate } },
+      select: { createdAt: true, status: true },
+    }),
+    prisma.invoice.findMany({
+      where: {
+        status: InvoiceStatus.PAID,
+        updatedAt: { gte: startDate, lte: endDate },
+      },
+      select: { updatedAt: true, amount: true, currency: true },
+    }),
+  ]);
+
+  const workspacesMap = new Map<string, { date: string; created: number; completed: number }>();
+  const usersMap = new Map<string, { date: string; created: number; completed: number }>();
+  const subscriptionsMap = new Map<string, { date: string; trials: number; paid: number; canceled: number }>();
+  const invoicesMap = new Map<string, { date: string; created: number; paid: number }>();
+  const revenueMap = new Map<string, { date: string; amount: number; currency: string }>();
+
+  createdWorkspaces.forEach((w) => {
+    const key = formatKey(w.createdAt);
+    const existing = workspacesMap.get(key) || { date: key, created: 0, completed: 0 };
+    existing.created += 1;
+    workspacesMap.set(key, existing);
+  });
+
+  createdUsers.forEach((u) => {
+    const key = formatKey(u.createdAt);
+    const existing = usersMap.get(key) || { date: key, created: 0, completed: 0 };
+    existing.created += 1;
+    usersMap.set(key, existing);
+  });
+
+  createdSubscriptions.forEach((s) => {
+    const key = formatKey(s.createdAt);
+    const existing = subscriptionsMap.get(key) || { date: key, trials: 0, paid: 0, canceled: 0 };
+    if (s.status === "ACTIVE") existing.paid += 1;
+    else if (s.status === "CANCELED" || s.status === "PAST_DUE") existing.canceled += 1;
+    subscriptionsMap.set(key, existing);
+  });
+
+  createdInvoices.forEach((i) => {
+    const key = formatKey(i.createdAt);
+    const existing = invoicesMap.get(key) || { date: key, created: 0, paid: 0 };
+    existing.created += 1;
+    if (i.status === InvoiceStatus.PAID) existing.paid += 1;
+    invoicesMap.set(key, existing);
+  });
+
+  paidInvoices.forEach((i) => {
+    const key = formatKey(i.updatedAt) + "_" + i.currency;
+    const existing = revenueMap.get(key) || { date: formatKey(i.updatedAt), amount: 0, currency: i.currency };
+    existing.amount += Number(i.amount);
+    revenueMap.set(key, existing);
+  });
+
+  return {
+    revenue: Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    workspaces: Array.from(workspacesMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    users: Array.from(usersMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    subscriptions: Array.from(subscriptionsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    invoices: Array.from(invoicesMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
   };
 };
 
@@ -577,4 +790,7 @@ export const DashboardService = {
   getOverview,
   getActivity,
   getMetrics,
+  getPlatformOverview,
+  getPlatformActivity,
+  getPlatformMetrics,
 };

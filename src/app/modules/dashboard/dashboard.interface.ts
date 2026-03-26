@@ -1,31 +1,29 @@
 import { WorkspaceMemberRole } from "../../constants/role";
 import { SubscriptionPlan } from "../../constants/subscription";
 
-export interface IDashboardOverviewQuery {
-  // no query params for now, kept for symmetry/extensibility
-}
+export interface IWorkspaceDashboardOverviewQuery {}
 
-export interface IDashboardActivityQuery {
+export interface IWorkspaceDashboardActivityQuery {
   page?: number;
   limit?: number;
 }
 
-export interface IDashboardMoneyByCurrency {
+export interface IWorkspaceDashboardMoneyByCurrency {
   currency: string;
   collectedAmount: string;
   outstandingAmount: string;
 }
 
-export interface IDashboardInvoiceSummary {
+export interface IWorkspaceDashboardInvoiceSummary {
   total: number;
   pending: number;
   paid: number;
   overdue: number;
   canceled: number;
-  totalsByCurrency: IDashboardMoneyByCurrency[];
+  totalsByCurrency: IWorkspaceDashboardMoneyByCurrency[];
 }
 
-export interface IDashboardOverviewResponse {
+export interface IWorkspaceDashboardOverviewResponse {
   scope: "workspace" | "member";
   workspace: {
     id: string;
@@ -40,7 +38,7 @@ export interface IDashboardOverviewResponse {
     trialEndsAt: Date | null;
     billingCycleStartsAt: Date;
     billingCycleEndsAt: Date;
-  };
+  } | null;
   projects: {
     total: number;
     active: number;
@@ -59,7 +57,7 @@ export interface IDashboardOverviewResponse {
     assignedToMe: number;
     createdByMe: number;
   };
-  invoices: IDashboardInvoiceSummary | null;
+  invoices: IWorkspaceDashboardInvoiceSummary | null;
 }
 
 export interface IDashboardActivityActor {
@@ -79,7 +77,7 @@ export interface IDashboardActivityItem {
   actor: IDashboardActivityActor;
 }
 
-export interface IDashboardActivityResponse {
+export interface IWorkspaceDashboardActivityResponse {
   data: IDashboardActivityItem[];
   meta: {
     page: number;
@@ -89,7 +87,7 @@ export interface IDashboardActivityResponse {
   };
 }
 
-export interface IDashboardMetricsQuery {
+export interface IWorkspaceDashboardMetricsQuery {
   period?: "last_7_days" | "last_30_days" | "last_3_months" | "last_12_months";
 }
 
@@ -105,8 +103,57 @@ export interface ITimeSeriesDataPoint {
   completed: number;
 }
 
-export interface IDashboardMetricsResponse {
+export interface IWorkspaceDashboardMetricsResponse {
   revenue: ITimeSeriesRevenueDataPoint[];
   projects: ITimeSeriesDataPoint[];
   tasks: ITimeSeriesDataPoint[];
+}
+
+export interface IPlatformDashboardOverviewQuery {}
+
+export interface IPlatformDashboardOverviewResponse {
+  scope: "platform";
+  workspaces: {
+    total: number;
+    active: number;
+  };
+  users: {
+    total: number;
+    active: number;
+  };
+  subscriptions: {
+    paid: number;
+    trial: number;
+  };
+  invoices: {
+    total: number;
+    overdue: number;
+  };
+}
+
+export interface IPlatformDashboardActivityQuery {
+  page?: number;
+  limit?: number;
+}
+
+export interface IPlatformDashboardActivityResponse {
+  data: IDashboardActivityItem[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface IPlatformDashboardMetricsQuery {
+  period?: "last_7_days" | "last_30_days" | "last_3_months" | "last_12_months";
+}
+
+export interface IPlatformDashboardMetricsResponse {
+  revenue: ITimeSeriesRevenueDataPoint[];
+  workspaces: ITimeSeriesDataPoint[];
+  users: ITimeSeriesDataPoint[];
+  subscriptions: { date: string; trials: number; paid: number; canceled: number }[];
+  invoices: { date: string; created: number; paid: number }[];
 }
