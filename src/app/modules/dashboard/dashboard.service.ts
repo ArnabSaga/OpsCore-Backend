@@ -573,6 +573,7 @@ const getMetrics = async (
   });
 
   return {
+    scope: req.workspaceRole === WorkspaceMemberRole.MEMBER ? "member" : "workspace",
     revenue: req.workspaceRole === WorkspaceMemberRole.MEMBER ? [] : Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
     projects: Array.from(projectsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
     tasks: Array.from(tasksMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
@@ -778,6 +779,7 @@ const getPlatformMetrics = async (
   });
 
   return {
+    scope: "platform",
     revenue: Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
     workspaces: Array.from(workspacesMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
     users: Array.from(usersMap.values()).sort((a, b) => a.date.localeCompare(b.date)),

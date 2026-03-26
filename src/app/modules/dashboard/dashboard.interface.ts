@@ -104,6 +104,7 @@ export interface ITimeSeriesDataPoint {
 }
 
 export interface IWorkspaceDashboardMetricsResponse {
+  scope: "workspace" | "member";
   revenue: ITimeSeriesRevenueDataPoint[];
   projects: ITimeSeriesDataPoint[];
   tasks: ITimeSeriesDataPoint[];
@@ -151,6 +152,7 @@ export interface IPlatformDashboardMetricsQuery {
 }
 
 export interface IPlatformDashboardMetricsResponse {
+  scope: "platform";
   revenue: ITimeSeriesRevenueDataPoint[];
   workspaces: ITimeSeriesDataPoint[];
   users: ITimeSeriesDataPoint[];
