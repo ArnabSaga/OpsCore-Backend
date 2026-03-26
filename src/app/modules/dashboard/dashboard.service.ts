@@ -677,30 +677,61 @@ const getPlatformMetrics = async (
   query: IPlatformDashboardMetricsQuery
 ): Promise<IPlatformDashboardMetricsResponse> => {
   let days = 30;
+  let aggregation: "day" | "week" | "month" = "day";
+
   switch (query.period) {
     case "last_7_days":
       days = 7;
+      aggregation = "day";
+      break;
+    case "last_30_days":
+      days = 30;
+      aggregation = "week";
       break;
     case "last_3_months":
       days = 90;
+      aggregation = "month";
       break;
     case "last_12_months":
       days = 365;
-      break;
-    case "last_30_days":
-    default:
-      days = 30;
+      aggregation = "month";
       break;
   }
 
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  
+  if (aggregation === "month") {
+    startDate.setMonth(startDate.getMonth() - (query.period === "last_12_months" ? 11 : 2));
+    startDate.setDate(1);
+  } else if (aggregation === "week") {
+    startDate.setDate(startDate.getDate() - 28);
+  } else {
+    startDate.setDate(startDate.getDate() - 6);
+  }
   startDate.setHours(0, 0, 0, 0);
 
   const formatKey = (d: Date) => {
-    if (days > 90) return d.toISOString().substring(0, 7);
+    if (aggregation === "month") return d.toISOString().substring(0, 7);
+    if (aggregation === "week") {
+      const diffTime = Math.max(0, d.getTime() - startDate.getTime());
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      return `week_${Math.floor(diffDays / 7)}`;
+    }
     return d.toISOString().split("T")[0];
+  };
+
+  const formatDateLabel = (d: Date) => {
+    if (aggregation === "month") {
+      return d.toLocaleDateString("en-US", { month: "short" });
+    }
+    if (aggregation === "week") {
+      const diffTime = Math.max(0, d.getTime() - startDate.getTime());
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const weekNum = Math.floor(diffDays / 7) + 1;
+      return `Week ${weekNum}`;
+    }
+    return d.toLocaleDateString("en-US", { weekday: "short" });
   };
 
   const [
@@ -735,9 +766,7 @@ const getPlatformMetrics = async (
     }),
   ]);
 
-  const formatDateLabel = (d: Date) => {
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  };
+
 
   const workspacesMap = new Map<string, { date: string; created: number; completed: number }>();
   const usersMap = new Map<string, { date: string; created: number; completed: number }>();
