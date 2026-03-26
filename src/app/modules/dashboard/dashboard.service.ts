@@ -735,6 +735,10 @@ const getPlatformMetrics = async (
     }),
   ]);
 
+  const formatDateLabel = (d: Date) => {
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
   const workspacesMap = new Map<string, { date: string; created: number; completed: number }>();
   const usersMap = new Map<string, { date: string; created: number; completed: number }>();
   const subscriptionsMap = new Map<string, { date: string; trials: number; paid: number; canceled: number }>();
@@ -743,21 +747,21 @@ const getPlatformMetrics = async (
 
   createdWorkspaces.forEach((w) => {
     const key = formatKey(w.createdAt);
-    const existing = workspacesMap.get(key) || { date: key, created: 0, completed: 0 };
+    const existing = workspacesMap.get(key) || { date: key, label: formatDateLabel(w.createdAt), created: 0, completed: 0 };
     existing.created += 1;
     workspacesMap.set(key, existing);
   });
 
   createdUsers.forEach((u) => {
     const key = formatKey(u.createdAt);
-    const existing = usersMap.get(key) || { date: key, created: 0, completed: 0 };
+    const existing = usersMap.get(key) || { date: key, label: formatDateLabel(u.createdAt), created: 0, completed: 0 };
     existing.created += 1;
     usersMap.set(key, existing);
   });
 
   createdSubscriptions.forEach((s) => {
     const key = formatKey(s.createdAt);
-    const existing = subscriptionsMap.get(key) || { date: key, trials: 0, paid: 0, canceled: 0 };
+    const existing = subscriptionsMap.get(key) || { date: key, label: formatDateLabel(s.createdAt), trials: 0, paid: 0, canceled: 0 };
     if (s.status === "ACTIVE") existing.paid += 1;
     else if (s.status === "CANCELED" || s.status === "PAST_DUE") existing.canceled += 1;
     subscriptionsMap.set(key, existing);
@@ -765,7 +769,7 @@ const getPlatformMetrics = async (
 
   createdInvoices.forEach((i) => {
     const key = formatKey(i.createdAt);
-    const existing = invoicesMap.get(key) || { date: key, created: 0, paid: 0 };
+    const existing = invoicesMap.get(key) || { date: key, label: formatDateLabel(i.createdAt), created: 0, paid: 0 };
     existing.created += 1;
     if (i.status === InvoiceStatus.PAID) existing.paid += 1;
     invoicesMap.set(key, existing);
@@ -773,7 +777,7 @@ const getPlatformMetrics = async (
 
   paidInvoices.forEach((i) => {
     const key = formatKey(i.updatedAt) + "_" + i.currency;
-    const existing = revenueMap.get(key) || { date: formatKey(i.updatedAt), amount: 0, currency: i.currency };
+    const existing = revenueMap.get(key) || { date: formatKey(i.updatedAt), label: formatDateLabel(i.updatedAt), amount: 0, currency: i.currency };
     existing.amount += Number(i.amount);
     revenueMap.set(key, existing);
   });

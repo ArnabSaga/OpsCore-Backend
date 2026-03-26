@@ -36,8 +36,6 @@ workspaceRouter.get(
   DashboardController.getMetrics
 );
 
-router.use("/", workspaceRouter);
-
 const platformRouter = Router();
 platformRouter.use(requireSystemRole(SystemRole.SUPER_ADMIN));
 
@@ -56,5 +54,5 @@ platformRouter.get(
 );
 
 router.use("/platform", platformRouter);
-
+router.use("/", workspaceRouter);
 export const DashboardRoutes = router;

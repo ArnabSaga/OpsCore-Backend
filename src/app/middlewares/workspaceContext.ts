@@ -5,6 +5,7 @@ import { auth } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 import AppError from "../errors/AppError";
 import { WorkspaceMemberStatus } from "../../generated/prisma/enums";
+import { SystemRole } from "../constants/role";
 
 export const workspaceContext = async (req: Request, _res: Response, next: NextFunction) => {
   try {
@@ -43,6 +44,10 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
     const resolvedWorkspaceId = requestedWorkspaceId ?? dbSession.activeWorkspaceId;
 
     if (!resolvedWorkspaceId) {
+      if (req.user.systemRole === SystemRole.SUPER_ADMIN) {
+        return next();
+      }
+
       throw new AppError(
         status.BAD_REQUEST,
         "No active workspace selected. Please switch to a workspace first"
