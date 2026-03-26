@@ -25,8 +25,9 @@ app.use(
   cors({
     origin: [envVars.FRONTEND_URL, envVars.BETTER_AUTH_URL],
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-workspace-id"],
+    exposedHeaders: ["Content-Type"],
   })
 );
 app.use("/api/auth", toNodeHandler(auth));

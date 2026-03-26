@@ -247,13 +247,19 @@ const getOverview = async (
   req: Request,
   _query: IWorkspaceDashboardOverviewQuery
 ): Promise<IWorkspaceDashboardOverviewResponse> => {
-  if (!req.user || !req.workspaceId || !req.workspaceRole) {
-    throw new AppError(status.UNAUTHORIZED, "Dashboard access requires authentication");
+  const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
+
+  if (!req.user || (!isSuperAdmin && (!req.workspaceId || !req.workspaceRole))) {
+    throw new AppError(status.UNAUTHORIZED, "Dashboard access requires authentication and workspace context");
   }
 
   const workspaceId = req.workspaceId;
-  const userId = req.user.id;
-  const role = req.workspaceRole;
+  const userId = req.user!.id;
+  const role = req.workspaceRole ?? WorkspaceMemberRole.OWNER;
+  
+  if (!workspaceId) {
+    throw new AppError(status.BAD_REQUEST, "No active workspace selected");
+  }
   const isMember = role === WorkspaceMemberRole.MEMBER;
 
   const workspace = await getWorkspaceOrThrow(workspaceId);
@@ -381,8 +387,15 @@ const getActivity = async (
   req: Request,
   query: IWorkspaceDashboardActivityQuery
 ): Promise<IWorkspaceDashboardActivityResponse> => {
-  if (!req.user || !req.workspaceId || !req.workspaceRole) {
-    throw new AppError(status.UNAUTHORIZED, "Dashboard activity requires authentication");
+  const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
+
+  if (!req.user || (!isSuperAdmin && (!req.workspaceId || !req.workspaceRole))) {
+    throw new AppError(status.UNAUTHORIZED, "Dashboard activity requires authentication and workspace context");
+  }
+
+  const workspaceId = req.workspaceId;
+  if (!workspaceId) {
+    throw new AppError(status.BAD_REQUEST, "No active workspace selected");
   }
 
   const isMember = req.workspaceRole === WorkspaceMemberRole.MEMBER;
@@ -453,8 +466,15 @@ const getMetrics = async (
   req: Request,
   query: IWorkspaceDashboardMetricsQuery
 ): Promise<IWorkspaceDashboardMetricsResponse> => {
-  if (!req.user || !req.workspaceId || !req.workspaceRole) {
-    throw new AppError(status.UNAUTHORIZED, "Dashboard metrics requires authentication");
+  const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
+
+  if (!req.user || (!isSuperAdmin && (!req.workspaceId || !req.workspaceRole))) {
+    throw new AppError(status.UNAUTHORIZED, "Dashboard metrics requires authentication and workspace context");
+  }
+
+  const workspaceId = req.workspaceId;
+  if (!workspaceId) {
+    throw new AppError(status.BAD_REQUEST, "No active workspace selected");
   }
 
   let days = 30;

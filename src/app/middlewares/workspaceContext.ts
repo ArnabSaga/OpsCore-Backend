@@ -5,7 +5,7 @@ import { auth } from "../lib/auth";
 import { prisma } from "../lib/prisma";
 import AppError from "../errors/AppError";
 import { WorkspaceMemberStatus } from "../../generated/prisma/enums";
-import { SystemRole } from "../constants/role";
+import { SystemRole, WorkspaceMemberRole } from "../constants/role";
 
 export const workspaceContext = async (req: Request, _res: Response, next: NextFunction) => {
   try {
@@ -40,11 +40,15 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
       throw new AppError(status.UNAUTHORIZED, "Session not found in database");
     }
 
-    const requestedWorkspaceId = req.params.workspaceId as string | undefined;
+    // Accept workspace ID from route parameter or custom header
+    const requestedWorkspaceId = 
+      (req.params.workspaceId as string | undefined) ?? 
+      (req.headers["x-workspace-id"] as string | undefined);
+      
     const resolvedWorkspaceId = requestedWorkspaceId ?? dbSession.activeWorkspaceId;
 
     if (!resolvedWorkspaceId) {
-      if (req.user.systemRole === SystemRole.SUPER_ADMIN) {
+      if (req.user.systemRole === SystemRole.SUPER_ADMIN || String(req.user.systemRole) === "SUPER_ADMIN") {
         return next();
       }
 
@@ -54,6 +58,7 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
       );
     }
 
+    // Try to find membership
     const membership = await prisma.workspaceMember.findFirst({
       where: {
         userId: req.user.id,
@@ -74,6 +79,22 @@ export const workspaceContext = async (req: Request, _res: Response, next: NextF
         },
       },
     });
+
+    // If no membership but user is Super Admin, allow access with OWNER role
+    if (!membership && (req.user.systemRole === SystemRole.SUPER_ADMIN || String(req.user.systemRole) === "SUPER_ADMIN")) {
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: resolvedWorkspaceId, deletedAt: null },
+      });
+
+      if (!workspace) {
+        throw new AppError(status.NOT_FOUND, "Workspace not found");
+      }
+
+      req.workspaceId = workspace.id;
+      req.workspaceRole = WorkspaceMemberRole.OWNER; 
+      
+      return next();
+    }
 
     if (!membership) {
       throw new AppError(status.FORBIDDEN, "You do not belong to this workspace");
