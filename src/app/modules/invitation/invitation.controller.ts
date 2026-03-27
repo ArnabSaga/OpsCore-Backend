@@ -57,10 +57,33 @@ const declineInvitation = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const resendInvitation = catchAsync(async (req: Request, res: Response) => {
+  const result = await InvitationService.resendInvitation(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Invitation resent successfully",
+    data: result,
+  });
+});
+
+const expireInvitation = catchAsync(async (req: Request, res: Response) => {
+  await InvitationService.expireInvitation(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Invitation expired successfully",
+  });
+});
+
 export const InvitationController = {
   getInvitations,
   createInvitation,
   cancelInvitation,
   acceptInvitation,
   declineInvitation,
+  resendInvitation,
+  expireInvitation,
 };

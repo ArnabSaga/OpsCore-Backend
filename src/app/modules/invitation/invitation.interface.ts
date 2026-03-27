@@ -20,6 +20,9 @@ export interface IInvitationResponse {
   status: InvitationStatus;
   expiresAt: Date;
   createdAt: Date;
+  acceptedAt?: Date | null;
+  rejectedAt?: Date | null;
+  canceledAt?: Date | null;
   invitedBy: {
     id: string;
     name: string;

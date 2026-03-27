@@ -36,4 +36,6 @@ router.get(
   BillingController.getBillingHistory
 );
 
+router.get("/usage", BillingController.getUsage);
+
 export const BillingRoutes = router;

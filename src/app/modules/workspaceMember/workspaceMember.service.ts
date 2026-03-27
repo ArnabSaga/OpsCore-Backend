@@ -8,6 +8,7 @@ import {
   IUpdateWorkspaceMemberPayload,
   IWorkspaceMemberResponse,
 } from "./workspaceMember.interface";
+import { auditLog } from "../../utils/auditLog";
 
 
 const getScopedMemberOrThrow = async (workspaceId: string, memberId: string) => {
@@ -28,6 +29,14 @@ const getScopedMemberOrThrow = async (workspaceId: string, memberId: string) => 
       joinedAt: true,
       addedByUserId: true,
       user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+        },
+      },
+      addedByUser: {
         select: {
           id: true,
           name: true,
@@ -91,7 +100,8 @@ const assertRequesterCanManageTarget = async (
 };
 
 const mapWorkspaceMemberResponse = (
-  member: Awaited<ReturnType<typeof getScopedMemberOrThrow>>
+  member: Awaited<ReturnType<typeof getScopedMemberOrThrow>>,
+  reqUserId: string
 ): IWorkspaceMemberResponse => {
   return {
     id: member.id,
@@ -107,6 +117,13 @@ const mapWorkspaceMemberResponse = (
       email: member.user.email,
       image: member.user.image,
     },
+    addedByUser: member.addedByUser ? {
+      id: member.addedByUser.id,
+      name: member.addedByUser.name,
+      email: member.addedByUser.email,
+      image: member.addedByUser.image,
+    } : null,
+    isCurrentUser: reqUserId === member.userId,
   };
 };
 
@@ -139,25 +156,19 @@ const getMembers = async (req: Request): Promise<IWorkspaceMemberResponse[]> => 
             image: true,
           },
         },
+        addedByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
       },
       orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
     });
 
-    return members.map((member) => ({
-      id: member.id,
-      workspaceId: member.workspaceId,
-      userId: member.userId,
-      role: member.role,
-      status: member.status,
-      joinedAt: member.joinedAt,
-      addedByUserId: member.addedByUserId,
-      user: {
-        id: member.user.id,
-        name: member.user.name,
-        email: member.user.email,
-        image: member.user.image,
-      },
-    }));
+    return members.map((member) => mapWorkspaceMemberResponse(member, req.user!.id));
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch members");
@@ -225,24 +236,18 @@ const updateMember = async (req: Request): Promise<IWorkspaceMemberResponse> => 
             image: true,
           },
         },
+        addedByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
       },
     });
 
-    return {
-      id: updatedMember.id,
-      workspaceId: updatedMember.workspaceId,
-      userId: updatedMember.userId,
-      role: updatedMember.role,
-      status: updatedMember.status,
-      joinedAt: updatedMember.joinedAt,
-      addedByUserId: updatedMember.addedByUserId,
-      user: {
-        id: updatedMember.user.id,
-        name: updatedMember.user.name,
-        email: updatedMember.user.email,
-        image: updatedMember.user.image,
-      },
-    };
+    return mapWorkspaceMemberResponse(updatedMember, req.user!.id);
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to update member");
@@ -276,6 +281,14 @@ const removeMember = async (req: Request): Promise<void> => {
     await prisma.workspaceMember.delete({
       where: { id: memberId },
     });
+
+    await auditLog({
+      workspaceId,
+      userId: requestingUserId,
+      action: "MEMBER_REMOVED",
+      entityType: "USER",
+      entityId: existingMember.userId,
+    });
   } catch (error) {
     if (error instanceof AppError) throw error;
 
@@ -283,8 +296,68 @@ const removeMember = async (req: Request): Promise<void> => {
   }
 };
 
+const transferOwnership = async (req: Request) => {
+  try {
+    const workspaceId = req.params.workspaceId as string;
+    const memberId = req.params.memberId as string;
+    const requestingUserId = req.user!.id;
+
+    const { confirm } = req.body;
+    if (!confirm) {
+      throw new AppError(status.BAD_REQUEST, "Confirmation is required to transfer ownership");
+    }
+
+    const currentOwner = await prisma.workspaceMember.findFirst({
+      where: { workspaceId, userId: requestingUserId, role: WorkspaceMemberRole.OWNER, status: WorkspaceMemberStatus.ACTIVE },
+    });
+
+    if (!currentOwner) {
+      throw new AppError(status.FORBIDDEN, "Only an active owner can transfer ownership");
+    }
+
+    const targetMember = await getScopedMemberOrThrow(workspaceId, memberId);
+
+    if (targetMember.userId === requestingUserId) {
+      throw new AppError(status.BAD_REQUEST, "You cannot transfer ownership to yourself");
+    }
+    
+    if (targetMember.status !== WorkspaceMemberStatus.ACTIVE) {
+      throw new AppError(status.BAD_REQUEST, "Cannot transfer ownership to an inactive member");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.workspaceMember.update({
+        where: { id: currentOwner.id },
+        data: { role: WorkspaceMemberRole.ADMIN },
+      });
+
+      await tx.workspaceMember.update({
+        where: { id: targetMember.id },
+        data: { role: WorkspaceMemberRole.OWNER },
+      });
+      
+      await tx.workspace.update({
+        where: { id: workspaceId },
+        data: { createdByUserId: targetMember.userId },
+      });
+    });
+
+    await auditLog({
+      workspaceId,
+      userId: requestingUserId,
+      action: "OWNERSHIP_TRANSFERRED",
+      entityType: "USER",
+      entityId: targetMember.userId,
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to transfer ownership");
+  }
+};
+
 export const WorkspaceMemberService = {
   getMembers,
   updateMember,
   removeMember,
+  transferOwnership,
 };

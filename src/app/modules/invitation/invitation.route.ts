@@ -40,6 +40,22 @@ workspaceInvitationRouter.delete(
   InvitationController.cancelInvitation
 );
 
+workspaceInvitationRouter.post(
+  "/:invitationId/resend",
+  validateRequest(InvitationValidation.invitationIdParamsSchema),
+  requireFeature("workspace.memberManagement"),
+  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
+  InvitationController.resendInvitation
+);
+
+workspaceInvitationRouter.post(
+  "/:invitationId/expire",
+  validateRequest(InvitationValidation.invitationIdParamsSchema),
+  requireFeature("workspace.memberManagement"),
+  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
+  InvitationController.expireInvitation
+);
+
 invitationActionRouter.use(requireAuth);
 
 invitationActionRouter.post(

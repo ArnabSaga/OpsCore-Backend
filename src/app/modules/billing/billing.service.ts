@@ -5,7 +5,11 @@ import { SubscriptionPlan, SubscriptionStatus } from "../../constants/subscripti
 import { WorkspaceMemberRole } from "../../constants/role";
 import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
-import { resolveWorkspacePlanContext } from "../../utils/checkPlanLimit";
+import {
+  resolveWorkspacePlanContext,
+  getCurrentPlanUsage,
+  getPlanLimit,
+} from "../../utils/checkPlanLimit";
 import {
   IBillingHistoryResponse,
   ICreateCustomerPortalPayload,
@@ -13,6 +17,7 @@ import {
   IGetBillingHistoryQuery,
   IPrepareCheckoutPayload,
   IPreparedCheckoutResponse,
+  IUsageResponse,
 } from "./billing.interface";
 import {
   centsToMoneyString,
@@ -327,9 +332,45 @@ const getBillingHistory = async (req: Request): Promise<IBillingHistoryResponse>
   }
 };
 
+const getUsage = async (req: Request): Promise<IUsageResponse> => {
+  try {
+    ensureWorkspaceOwner(req);
+    const workspaceId = req.workspaceId!;
+
+    const resourcesToTrack = [
+      "members",
+      "projects",
+      "tasks",
+      "storageMb",
+      "monthlyInvitations"
+    ] as const;
+
+    const metrics = await Promise.all(
+      resourcesToTrack.map(async (resource) => {
+        const [planLimit, currentUsage] = await Promise.all([
+          getPlanLimit(workspaceId, resource),
+          getCurrentPlanUsage({ workspaceId, limitKey: resource }),
+        ]);
+
+        return {
+          resource,
+          used: currentUsage,
+          limit: planLimit.limit,
+        };
+      })
+    );
+
+    return { metrics };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch usage metrics");
+  }
+};
+
 export const BillingService = {
   getCurrentWorkspaceSubscription,
   prepareCheckoutFlow,
   createCustomerPortal,
   getBillingHistory,
+  getUsage,
 };

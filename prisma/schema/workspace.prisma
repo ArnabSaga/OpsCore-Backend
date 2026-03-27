@@ -16,6 +16,21 @@ model Workspace {
   billingCycleStartsAt   DateTime?
   billingCycleEndsAt     DateTime?
 
+  // Branding
+  logoUrl        String?
+  faviconUrl     String?
+  primaryColor   String?
+  accentColor    String?
+  customDomain   String?
+  emailBrandName String?
+
+  // Settings
+  description    String?
+  timezone       String?
+  currency       String?
+  supportEmail   String?
+  billingEmail   String?
+
   sessions        Session[]
   members         WorkspaceMember[]
   invitations     WorkspaceInvitation[]

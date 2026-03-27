@@ -48,9 +48,21 @@ const getBillingHistory = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getUsage = catchAsync(async (req: Request, res: Response) => {
+  const result = await BillingService.getUsage(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Usage metrics fetched successfully",
+    data: result,
+  });
+});
+
 export const BillingController = {
   getCurrentWorkspaceSubscription,
   prepareCheckoutFlow,
   createCustomerPortal,
   getBillingHistory,
+  getUsage,
 };

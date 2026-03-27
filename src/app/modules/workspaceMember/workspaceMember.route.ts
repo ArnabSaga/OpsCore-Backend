@@ -38,4 +38,12 @@ router.delete(
   WorkspaceMemberController.removeMember
 );
 
+router.post(
+  "/:memberId/transfer-ownership",
+  validateRequest(WorkspaceMemberValidation.workspaceMemberParamsSchema),
+  requireFeature("workspace.advancedPermissions"),
+  requireRole(WorkspaceMemberRole.OWNER),
+  WorkspaceMemberController.transferOwnership
+);
+
 export const WorkspaceMemberRoutes = router;

@@ -1,3 +1,4 @@
+import { PlanLimitKey } from "../../config/planFeatures";
 import { SubscriptionPlan, SubscriptionStatus } from "../../constants/subscription";
 
 export interface IGetBillingHistoryQuery {
@@ -90,4 +91,14 @@ export interface IBillingHistoryResponse {
 
 export interface ICustomerPortalResponse {
   url: string;
+}
+
+export interface IUsageMetric {
+  resource: PlanLimitKey;
+  used: number;
+  limit: number | null;
+}
+
+export interface IUsageResponse {
+  metrics: IUsageMetric[];
 }

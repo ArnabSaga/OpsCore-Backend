@@ -99,6 +99,9 @@ const getInvitations = async (req: Request): Promise<IInvitationResponse[]> => {
       status: invitation.status,
       expiresAt: invitation.expiresAt,
       createdAt: invitation.createdAt,
+      acceptedAt: invitation.acceptedAt,
+      rejectedAt: invitation.rejectedAt,
+      canceledAt: invitation.canceledAt,
       invitedBy: invitation.invitedBy,
       planMeta: {
         workspacePlan: planContext.effectivePlan,
@@ -198,6 +201,9 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
       status: invitation.status,
       expiresAt: invitation.expiresAt,
       createdAt: invitation.createdAt,
+      acceptedAt: invitation.acceptedAt,
+      rejectedAt: invitation.rejectedAt,
+      canceledAt: invitation.canceledAt,
       invitedBy: invitation.invitedBy,
       planMeta: {
         workspacePlan: planContext.effectivePlan,
@@ -399,10 +405,126 @@ const declineInvitation = async (req: Request): Promise<void> => {
   }
 };
 
+
+
+const resendInvitation = async (req: Request): Promise<IInvitationResponse> => {
+  try {
+    const workspaceId = req.params.workspaceId as string;
+    const invitationId = req.params.invitationId as string;
+    const invitedById = req.user!.id;
+
+    await assertPlanFeatureEnabled(workspaceId, "workspace.memberManagement");
+
+    const existingInvitation = await prisma.workspaceInvitation.findFirst({
+      where: { id: invitationId, workspaceId },
+    });
+
+    if (!existingInvitation) {
+      throw new AppError(status.NOT_FOUND, "Invitation not found");
+    }
+
+    if (existingInvitation.status === InvitationStatus.ACCEPTED) {
+      throw new AppError(status.BAD_REQUEST, "Cannot resend an accepted invitation");
+    }
+
+    // Cancel old invitation if it was still pending
+    if (existingInvitation.status === InvitationStatus.PENDING) {
+      await prisma.workspaceInvitation.update({
+        where: { id: existingInvitation.id },
+        data: { status: InvitationStatus.CANCELED, canceledAt: new Date() },
+      });
+    }
+
+    await assertPlanLimitNotReached({
+      workspaceId,
+      limitKey: "monthlyInvitations",
+      incrementBy: 1,
+      customMessage: 'You have reached the "monthlyInvitations" limit for your current plan.',
+    });
+    await assertWorkspaceCanInviteMoreMembers(workspaceId);
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + INVITATION_EXPIRY_DAYS);
+
+    const newInvitation = await prisma.workspaceInvitation.create({
+      data: {
+        workspaceId,
+        email: existingInvitation.email,
+        role: existingInvitation.role,
+        invitedById,
+        token,
+        expiresAt,
+      },
+      include: {
+        invitedBy: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    const planContext = await resolveWorkspacePlanContext(workspaceId);
+
+    return {
+      id: newInvitation.id,
+      email: newInvitation.email,
+      role: newInvitation.role,
+      status: newInvitation.status,
+      expiresAt: newInvitation.expiresAt,
+      createdAt: newInvitation.createdAt,
+      acceptedAt: newInvitation.acceptedAt,
+      rejectedAt: newInvitation.rejectedAt,
+      canceledAt: newInvitation.canceledAt,
+      invitedBy: newInvitation.invitedBy,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to resend invitation");
+  }
+};
+
+const expireInvitation = async (req: Request): Promise<void> => {
+  try {
+    const workspaceId = req.params.workspaceId as string;
+    const invitationId = req.params.invitationId as string;
+
+    await assertPlanFeatureEnabled(workspaceId, "workspace.memberManagement");
+
+    const invitation = await prisma.workspaceInvitation.findFirst({
+      where: { id: invitationId, workspaceId },
+      select: { id: true, status: true },
+    });
+
+    if (!invitation) {
+      throw new AppError(status.NOT_FOUND, "Invitation not found");
+    }
+
+    if (invitation.status !== InvitationStatus.PENDING) {
+      throw new AppError(status.BAD_REQUEST, "Only pending invitations can be expired");
+    }
+
+    await prisma.workspaceInvitation.update({
+      where: { id: invitation.id },
+      data: { status: InvitationStatus.EXPIRED },
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to manually expire invitation");
+  }
+};
+
 export const InvitationService = {
   getInvitations,
   createInvitation,
   cancelInvitation,
   acceptInvitation,
   declineInvitation,
+  resendInvitation,
+  expireInvitation,
 };

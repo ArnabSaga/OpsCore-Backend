@@ -28,6 +28,8 @@ export interface IWorkspaceMemberResponse {
   status: WorkspaceMemberStatus;
   joinedAt: Date;
   addedByUserId: string | null;
+  addedByUser?: IWorkspaceMemberUser | null;
+  isCurrentUser: boolean;
   user: IWorkspaceMemberUser;
 }
 

@@ -36,8 +36,19 @@ const removeMember = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const transferOwnership = catchAsync(async (req: Request, res: Response) => {
+  await WorkspaceMemberService.transferOwnership(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Ownership transferred successfully",
+  });
+});
+
 export const WorkspaceMemberController = {
   getMembers,
   updateMember,
   removeMember,
+  transferOwnership,
 };
