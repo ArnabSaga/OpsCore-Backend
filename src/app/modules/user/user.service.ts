@@ -6,6 +6,7 @@ import AppError from "../../errors/AppError";
 import { auth } from "../../lib/auth";
 import { destroyCloudinaryAssetByUrl } from "../../lib/cloudinary";
 import { prisma } from "../../lib/prisma";
+import { Prisma } from "../../../generated/prisma/client";
 import { IProfileResponse, IUpdatePasswordPayload, IUpdateProfilePayload } from "./user.interface";
 
 const profileSelect = {
@@ -149,8 +150,66 @@ const updatePassword = async (req: Request): Promise<void> => {
   }
 };
 
+const getPlatformUsers = async (req: Request) => {
+  try {
+    const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
+    if (!isSuperAdmin) {
+      throw new AppError(status.FORBIDDEN, "Only super administrators can access all users");
+    }
+
+    const query = req.query as { limit?: string; page?: string; search?: string };
+    const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+    const page = Math.max(Number(query.page) || 1, 1);
+    const skip = (page - 1) * limit;
+    const search = query.search?.trim();
+
+    const where: Prisma.UserWhereInput = {
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          systemRole: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip,
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    return {
+      items: users,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch platform users");
+  }
+};
+
 export const UserService = {
   getProfile,
+  getPlatformUsers,
   updateProfile,
   updatePassword,
 };

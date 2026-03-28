@@ -36,8 +36,20 @@ const updatePassword = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getPlatformUsers = catchAsync(async (req, res) => {
+  const result = await UserService.getPlatformUsers(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Platform users fetched successfully",
+    data: result,
+  });
+});
+
 export const UserController = {
   getProfile,
+  getPlatformUsers,
   updateProfile,
   updatePassword,
 };

@@ -2,6 +2,8 @@ import { Router } from "express";
 import { WorkspaceMemberRole } from "../../constants/role";
 import { requireAuth } from "../../middlewares/requireAuth";
 import { requireRole } from "../../middlewares/requireRole";
+import { requireSystemRole } from "../../middlewares/requireSystemRole";
+import { SystemRole } from "../../constants/role";
 import validateRequest from "../../middlewares/validateRequest";
 import { workspaceContext } from "../../middlewares/workspaceContext";
 import { WorkspaceController } from "./workspace.controller";
@@ -12,6 +14,12 @@ const router = Router();
 router.use(requireAuth);
 
 router.get("/my", WorkspaceController.getMyWorkspaces);
+
+router.get(
+  "/platform/all",
+  requireSystemRole(SystemRole.SUPER_ADMIN),
+  WorkspaceController.getPlatformWorkspaces
+);
 
 router.post(
   "/",

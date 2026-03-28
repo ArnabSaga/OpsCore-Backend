@@ -167,8 +167,20 @@ const getActivityLogs = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getPlatformWorkspaces = catchAsync(async (req: Request, res: Response) => {
+  const result = await WorkspaceService.getPlatformWorkspaces(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Platform workspaces fetched successfully",
+    data: result,
+  });
+});
+
 export const WorkspaceController = {
   getMyWorkspaces,
+  getPlatformWorkspaces,
   createWorkspace,
   getWorkspace,
   updateWorkspace,

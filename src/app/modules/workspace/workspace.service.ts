@@ -7,6 +7,7 @@ import { DEFAULT_WORKSPACE_PLAN, PLAN_FEATURES } from "../../config/planFeatures
 import AppError from "../../errors/AppError";
 import { auth } from "../../lib/auth";
 import { prisma } from "../../lib/prisma";
+import { Prisma } from "../../../generated/prisma/client";
 import {
   assertUserCanCreateWorkspace,
   resolveWorkspacePlanContext,
@@ -764,10 +765,72 @@ const getActivityLogs = async (req: Request) => {
   }
 };
 
+const getPlatformWorkspaces = async (req: Request) => {
+  try {
+    const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
+    if (!isSuperAdmin) {
+      throw new AppError(status.FORBIDDEN, "Only super administrators can access all workspaces");
+    }
+
+    const query = req.query as { limit?: string; page?: string; search?: string };
+    const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
+    const page = Math.max(Number(query.page) || 1, 1);
+    const skip = (page - 1) * limit;
+    const search = query.search?.trim();
+
+    const where: Prisma.WorkspaceWhereInput = {
+      deletedAt: null,
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { slug: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [workspaces, total] = await Promise.all([
+      prisma.workspace.findMany({
+        where,
+        include: {
+          createdByUser: {
+            select: { id: true, name: true, email: true, image: true },
+          },
+          _count: {
+            select: {
+              members: true,
+              projects: true,
+              tasks: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip,
+      }),
+      prisma.workspace.count({ where }),
+    ]);
+
+    return {
+      items: workspaces,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch platform workspaces");
+  }
+};
+
 export const WorkspaceService = {
   getMyWorkspaces,
+  getPlatformWorkspaces,
   createWorkspace,
-
   getWorkspace,
   updateWorkspace,
   switchWorkspace,
