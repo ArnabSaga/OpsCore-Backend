@@ -16,6 +16,7 @@ export interface IInvitationPlanMeta {
 export interface IInvitationResponse {
   id: string;
   email: string;
+  token: string;
   role: WorkspaceMemberRole;
   status: InvitationStatus;
   expiresAt: Date;
@@ -29,6 +30,11 @@ export interface IInvitationResponse {
     email: string;
   };
   planMeta?: IInvitationPlanMeta;
+  workspace?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
 }
 
 export interface IAcceptInvitationResponse {

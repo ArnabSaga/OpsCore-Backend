@@ -95,6 +95,7 @@ const getInvitations = async (req: Request): Promise<IInvitationResponse[]> => {
     return invitations.map((invitation) => ({
       id: invitation.id,
       email: invitation.email,
+      token: invitation.token,
       role: invitation.role,
       status: invitation.status,
       expiresAt: invitation.expiresAt,
@@ -197,6 +198,7 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
     return {
       id: invitation.id,
       email: invitation.email,
+      token: invitation.token,
       role: invitation.role,
       status: invitation.status,
       expiresAt: invitation.expiresAt,
@@ -407,6 +409,57 @@ const declineInvitation = async (req: Request): Promise<void> => {
 
 
 
+const getMyInvitations = async (req: Request): Promise<IInvitationResponse[]> => {
+  try {
+    const userEmail = req.user!.email.toLowerCase();
+
+    // Auto-expire any stale pending invitations for this email
+    await prisma.workspaceInvitation.updateMany({
+      where: {
+        email: userEmail,
+        status: InvitationStatus.PENDING,
+        expiresAt: { lt: new Date() },
+      },
+      data: { status: InvitationStatus.EXPIRED },
+    });
+
+    const invitations = await prisma.workspaceInvitation.findMany({
+      where: {
+        email: userEmail,
+        status: InvitationStatus.PENDING,
+        expiresAt: { gte: new Date() },
+      },
+      include: {
+        invitedBy: {
+          select: { id: true, name: true, email: true },
+        },
+        workspace: {
+          select: { id: true, name: true, slug: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return invitations.map((invitation) => ({
+      id: invitation.id,
+      email: invitation.email,
+      token: invitation.token,
+      role: invitation.role,
+      status: invitation.status,
+      expiresAt: invitation.expiresAt,
+      createdAt: invitation.createdAt,
+      acceptedAt: invitation.acceptedAt,
+      rejectedAt: invitation.rejectedAt,
+      canceledAt: invitation.canceledAt,
+      invitedBy: invitation.invitedBy,
+      workspace: invitation.workspace ?? undefined,
+    }));
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch your invitations");
+  }
+};
+
 const resendInvitation = async (req: Request): Promise<IInvitationResponse> => {
   try {
     const workspaceId = req.params.workspaceId as string;
@@ -468,6 +521,7 @@ const resendInvitation = async (req: Request): Promise<IInvitationResponse> => {
     return {
       id: newInvitation.id,
       email: newInvitation.email,
+      token: newInvitation.token,
       role: newInvitation.role,
       status: newInvitation.status,
       expiresAt: newInvitation.expiresAt,
@@ -519,12 +573,93 @@ const expireInvitation = async (req: Request): Promise<void> => {
   }
 };
 
+const getInvitationByToken = async (req: Request): Promise<IInvitationResponse> => {
+  try {
+    const token = req.params.token as string;
+
+    const invitation = await prisma.workspaceInvitation.findUnique({
+      where: { token },
+      include: {
+        invitedBy: {
+          select: { id: true, name: true, email: true },
+        },
+        workspace: {
+          select: { id: true, name: true, slug: true },
+        },
+      },
+    });
+
+    if (!invitation) {
+      throw new AppError(status.NOT_FOUND, "Invitation not found or invalid token");
+    }
+
+    // Auto-expire if needed
+    if (invitation.status === InvitationStatus.PENDING && invitation.expiresAt < new Date()) {
+      await prisma.workspaceInvitation.update({
+        where: { id: invitation.id },
+        data: { status: InvitationStatus.EXPIRED },
+      });
+      invitation.status = InvitationStatus.EXPIRED;
+    }
+
+    const planContext = await resolveWorkspacePlanContext(invitation.workspaceId);
+
+    return {
+      id: invitation.id,
+      email: invitation.email,
+      token: invitation.token,
+      role: invitation.role,
+      status: invitation.status,
+      expiresAt: invitation.expiresAt,
+      createdAt: invitation.createdAt,
+      acceptedAt: invitation.acceptedAt,
+      rejectedAt: invitation.rejectedAt,
+      canceledAt: invitation.canceledAt,
+      invitedBy: invitation.invitedBy,
+      workspace: invitation.workspace,
+      planMeta: {
+        workspacePlan: planContext.effectivePlan,
+        isTrialActive: planContext.isTrialActive,
+        trialStartsAt: planContext.trialStartedAt,
+        trialEndsAt: planContext.trialEndsAt,
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch invitation details");
+  }
+};
+
+const deleteInvitation = async (req: Request): Promise<void> => {
+  try {
+    const invitationId = req.params.invitationId as string;
+
+    const invitation = await prisma.workspaceInvitation.findUnique({
+      where: { id: invitationId },
+    });
+
+    if (!invitation) {
+      throw new AppError(status.NOT_FOUND, "Invitation not found");
+    }
+
+    await prisma.workspaceInvitation.delete({
+      where: { id: invitationId },
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to delete invitation");
+  }
+};
+
 export const InvitationService = {
   getInvitations,
+  getMyInvitations,
   createInvitation,
   cancelInvitation,
   acceptInvitation,
   declineInvitation,
   resendInvitation,
   expireInvitation,
+  getInvitationByToken,
+  deleteInvitation,
 };

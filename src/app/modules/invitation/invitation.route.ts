@@ -56,7 +56,26 @@ workspaceInvitationRouter.post(
   InvitationController.expireInvitation
 );
 
+workspaceInvitationRouter.delete(
+  "/:invitationId/hard-delete",
+  validateRequest(InvitationValidation.invitationIdParamsSchema),
+  requireFeature("workspace.memberManagement"),
+  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
+  InvitationController.deleteInvitation
+);
+
 invitationActionRouter.use(requireAuth);
+
+invitationActionRouter.get(
+  "/my",
+  InvitationController.getMyInvitations
+);
+
+invitationActionRouter.get(
+  "/:token",
+  validateRequest(InvitationValidation.invitationTokenParamsSchema),
+  InvitationController.getInvitationByToken
+);
 
 invitationActionRouter.post(
   "/:token/accept",

@@ -47,24 +47,17 @@ export const getStripePriceIdForPlan = (
   plan: Exclude<SubscriptionPlan, "FREE">,
   billingInterval: BillingInterval
 ) => {
-  const dynamicEnv = envVars as typeof envVars & {
-    STRIPE_PRICE_PRO_MONTHLY?: string;
-    STRIPE_PRICE_PRO_YEARLY?: string;
-    STRIPE_PRICE_ENTERPRISE_MONTHLY?: string;
-    STRIPE_PRICE_ENTERPRISE_YEARLY?: string;
-  };
-
   const mapping: Record<
     Exclude<SubscriptionPlan, "FREE">,
     Record<BillingInterval, string | undefined>
   > = {
     PRO: {
-      month: dynamicEnv.STRIPE_PRICE_PRO_MONTHLY,
-      year: dynamicEnv.STRIPE_PRICE_PRO_YEARLY,
+      month: envVars.STRIPE.STRIPE_PRICE_PRO_MONTHLY,
+      year: envVars.STRIPE.STRIPE_PRICE_PRO_YEARLY,
     },
     ENTERPRISE: {
-      month: dynamicEnv.STRIPE_PRICE_ENTERPRISE_MONTHLY,
-      year: dynamicEnv.STRIPE_PRICE_ENTERPRISE_YEARLY,
+      month: envVars.STRIPE.STRIPE_PRICE_ENTERPRISE_MONTHLY,
+      year: envVars.STRIPE.STRIPE_PRICE_ENTERPRISE_YEARLY,
     },
   };
 
@@ -102,24 +95,17 @@ export const mapStripeStatusToSubscriptionStatus = (
 };
 
 export const mapPriceIdToPlan = (priceId?: string | null): SubscriptionPlan => {
-  const dynamicEnv = envVars as typeof envVars & {
-    STRIPE_PRICE_PRO_MONTHLY?: string;
-    STRIPE_PRICE_PRO_YEARLY?: string;
-    STRIPE_PRICE_ENTERPRISE_MONTHLY?: string;
-    STRIPE_PRICE_ENTERPRISE_YEARLY?: string;
-  };
-
   if (!priceId) {
     return SubscriptionPlan.FREE;
   }
 
   const proPriceIds = [
-    dynamicEnv.STRIPE_PRICE_PRO_MONTHLY,
-    dynamicEnv.STRIPE_PRICE_PRO_YEARLY,
+    envVars.STRIPE.STRIPE_PRICE_PRO_MONTHLY,
+    envVars.STRIPE.STRIPE_PRICE_PRO_YEARLY,
   ].filter(Boolean);
   const enterprisePriceIds = [
-    dynamicEnv.STRIPE_PRICE_ENTERPRISE_MONTHLY,
-    dynamicEnv.STRIPE_PRICE_ENTERPRISE_YEARLY,
+    envVars.STRIPE.STRIPE_PRICE_ENTERPRISE_MONTHLY,
+    envVars.STRIPE.STRIPE_PRICE_ENTERPRISE_YEARLY,
   ].filter(Boolean);
 
   if (proPriceIds.includes(priceId)) {

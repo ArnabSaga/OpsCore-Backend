@@ -78,12 +78,47 @@ const expireInvitation = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getMyInvitations = catchAsync(async (req: Request, res: Response) => {
+  const result = await InvitationService.getMyInvitations(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Your invitations fetched successfully",
+    data: result,
+  });
+});
+
+const getInvitationByToken = catchAsync(async (req: Request, res: Response) => {
+  const result = await InvitationService.getInvitationByToken(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Invitation fetched successfully",
+    data: result,
+  });
+});
+
+const deleteInvitation = catchAsync(async (req: Request, res: Response) => {
+  await InvitationService.deleteInvitation(req);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Invitation deleted successfully",
+  });
+});
+
 export const InvitationController = {
   getInvitations,
+  getMyInvitations,
   createInvitation,
   cancelInvitation,
   acceptInvitation,
   declineInvitation,
   resendInvitation,
   expireInvitation,
+  getInvitationByToken,
+  deleteInvitation,
 };
