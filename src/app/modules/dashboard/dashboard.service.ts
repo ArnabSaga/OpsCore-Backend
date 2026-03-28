@@ -1,3 +1,17 @@
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  endOfDay,
+  endOfMonth,
+  endOfWeek,
+  format,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subDays,
+  subMonths,
+} from "date-fns";
 import { Request } from "express";
 import status from "http-status";
 import { Prisma } from "../../../generated/prisma/client";
@@ -10,6 +24,12 @@ import { resolveWorkspacePlanContext } from "../../utils/checkPlanLimit";
 import { formatMoney } from "../invoice/invoice.utils";
 import {
   IDashboardActivityItem,
+  IPlatformDashboardActivityQuery,
+  IPlatformDashboardActivityResponse,
+  IPlatformDashboardMetricsQuery,
+  IPlatformDashboardMetricsResponse,
+  IPlatformDashboardOverviewQuery,
+  IPlatformDashboardOverviewResponse,
   IWorkspaceDashboardActivityQuery,
   IWorkspaceDashboardActivityResponse,
   IWorkspaceDashboardInvoiceSummary,
@@ -17,13 +37,112 @@ import {
   IWorkspaceDashboardMetricsResponse,
   IWorkspaceDashboardOverviewQuery,
   IWorkspaceDashboardOverviewResponse,
-  IPlatformDashboardActivityQuery,
-  IPlatformDashboardActivityResponse,
-  IPlatformDashboardMetricsQuery,
-  IPlatformDashboardMetricsResponse,
-  IPlatformDashboardOverviewQuery,
-  IPlatformDashboardOverviewResponse,
 } from "./dashboard.interface";
+
+type AggregationUnit = "day" | "week" | "month";
+
+interface AggregationConfig {
+  unit: AggregationUnit;
+  startDate: Date;
+  endDate: Date;
+  numBuckets: number;
+}
+
+const getAggregationConfig = (period: string): AggregationConfig => {
+  const now = new Date();
+  const endDate = endOfDay(now);
+
+  switch (period) {
+    case "last_7_days":
+      return {
+        unit: "day",
+        startDate: startOfDay(subDays(now, 6)),
+        endDate,
+        numBuckets: 7,
+      };
+    case "last_3_months":
+      return {
+        unit: "week",
+        startDate: startOfWeek(subMonths(now, 3)),
+        endDate,
+        numBuckets: 13,
+      };
+    case "last_12_months":
+      return {
+        unit: "month",
+        startDate: startOfMonth(subMonths(now, 11)),
+        endDate,
+        numBuckets: 12,
+      };
+    case "last_30_days":
+    default:
+      return {
+        unit: "day",
+        startDate: startOfDay(subDays(now, 29)),
+        endDate,
+        numBuckets: 30,
+      };
+  }
+};
+
+const formatBucketLabel = (start: Date, end: Date, unit: AggregationUnit): string => {
+  if (unit === "day") return format(start, "MMM d");
+  if (unit === "month") return format(start, "MMM");
+
+  const startMonth = format(start, "MMM");
+  const endMonth = format(end, "MMM");
+  if (startMonth === endMonth) {
+    return `${startMonth} ${format(start, "d")}–${format(end, "d")}`;
+  }
+  return `${format(start, "MMM d")}–${format(end, "MMM d")}`;
+};
+
+const formatBucketKey = (date: Date, unit: AggregationUnit): string => {
+  if (unit === "month") return format(date, "yyyy-MM");
+  if (unit === "day") return format(date, "yyyy-MM-dd");
+  return format(startOfWeek(date), "yyyy-MM-dd");
+};
+
+const generateTimeSeriesBuckets = <T extends Record<string, any>>(
+  config: AggregationConfig,
+  defaultValues: T
+) => {
+  const buckets = new Map<
+    string,
+    T & { key: string; bucketStart: string; bucketEnd: string; label: string }
+  >();
+  let current = new Date(config.startDate);
+
+  for (let i = 0; i < config.numBuckets; i++) {
+    let bStart: Date;
+    let bEnd: Date;
+
+    if (config.unit === "day") {
+      bStart = startOfDay(current);
+      bEnd = endOfDay(current);
+      current = addDays(current, 1);
+    } else if (config.unit === "week") {
+      bStart = startOfWeek(current);
+      bEnd = endOfWeek(current);
+      current = addWeeks(current, 1);
+    } else {
+      bStart = startOfMonth(current);
+      bEnd = endOfMonth(current);
+      current = addMonths(current, 1);
+    }
+
+    const key = formatBucketKey(bStart, config.unit);
+    buckets.set(key, {
+      ...defaultValues,
+      key,
+      bucketStart: bStart.toISOString(),
+      bucketEnd: bEnd.toISOString(),
+      label: formatBucketLabel(bStart, bEnd, config.unit),
+    });
+  }
+
+  return buckets;
+};
 
 const buildTodayRange = () => {
   const start = new Date();
@@ -85,6 +204,7 @@ const getWorkspaceOrThrow = async (workspaceId: string) => {
       id: true,
       name: true,
       slug: true,
+      currency: true,
     },
   });
 
@@ -250,13 +370,16 @@ const getOverview = async (
   const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
 
   if (!req.user || (!isSuperAdmin && (!req.workspaceId || !req.workspaceRole))) {
-    throw new AppError(status.UNAUTHORIZED, "Dashboard access requires authentication and workspace context");
+    throw new AppError(
+      status.UNAUTHORIZED,
+      "Dashboard access requires authentication and workspace context"
+    );
   }
 
   const workspaceId = req.workspaceId;
   const userId = req.user!.id;
   const role = req.workspaceRole ?? WorkspaceMemberRole.OWNER;
-  
+
   if (!workspaceId) {
     throw new AppError(status.BAD_REQUEST, "No active workspace selected");
   }
@@ -353,14 +476,16 @@ const getOverview = async (
       slug: workspace.slug,
       role,
     },
-    subscription: isMember ? null : {
-      basePlan: planContext.basePlan as SubscriptionPlan,
-      effectivePlan: planContext.effectivePlan as SubscriptionPlan,
-      isTrialActive: planContext.isTrialActive,
-      trialEndsAt: planContext.trialEndsAt,
-      billingCycleStartsAt: planContext.billingCycleStartsAt,
-      billingCycleEndsAt: planContext.billingCycleEndsAt,
-    },
+    subscription: isMember
+      ? null
+      : {
+          basePlan: planContext.basePlan as SubscriptionPlan,
+          effectivePlan: planContext.effectivePlan as SubscriptionPlan,
+          isTrialActive: planContext.isTrialActive,
+          trialEndsAt: planContext.trialEndsAt,
+          billingCycleStartsAt: planContext.billingCycleStartsAt,
+          billingCycleEndsAt: planContext.billingCycleEndsAt,
+        },
     projects: {
       total: projectTotal,
       active: projectStatusMap[ProjectStatus.ACTIVE] ?? 0,
@@ -390,7 +515,10 @@ const getActivity = async (
   const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
 
   if (!req.user || (!isSuperAdmin && (!req.workspaceId || !req.workspaceRole))) {
-    throw new AppError(status.UNAUTHORIZED, "Dashboard activity requires authentication and workspace context");
+    throw new AppError(
+      status.UNAUTHORIZED,
+      "Dashboard activity requires authentication and workspace context"
+    );
   }
 
   const workspaceId = req.workspaceId;
@@ -469,7 +597,10 @@ const getMetrics = async (
   const isSuperAdmin = req.user?.systemRole === "SUPER_ADMIN";
 
   if (!req.user || (!isSuperAdmin && (!req.workspaceId || !req.workspaceRole))) {
-    throw new AppError(status.UNAUTHORIZED, "Dashboard metrics requires authentication and workspace context");
+    throw new AppError(
+      status.UNAUTHORIZED,
+      "Dashboard metrics requires authentication and workspace context"
+    );
   }
 
   const workspaceId = req.workspaceId;
@@ -477,32 +608,8 @@ const getMetrics = async (
     throw new AppError(status.BAD_REQUEST, "No active workspace selected");
   }
 
-  let days = 30;
-  switch (query.period) {
-    case "last_7_days":
-      days = 7;
-      break;
-    case "last_3_months":
-      days = 90;
-      break;
-    case "last_12_months":
-      days = 365;
-      break;
-    case "last_30_days":
-    default:
-      days = 30;
-      break;
-  }
-
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  startDate.setHours(0, 0, 0, 0);
-
-  const formatKey = (d: Date) => {
-    if (days > 90) return d.toISOString().substring(0, 7);
-    return d.toISOString().split("T")[0];
-  };
+  const config = getAggregationConfig(query.period || "last_30_days");
+  const { startDate, endDate, unit } = config;
 
   const projectWhere = buildVisibleProjectWhere(req);
   const taskWhere = buildVisibleTaskWhere(req);
@@ -546,57 +653,52 @@ const getMetrics = async (
         : Promise.resolve([]),
     ]);
 
-  const projectsMap = new Map<string, { date: string; created: number; completed: number }>();
-  const tasksMap = new Map<string, { date: string; created: number; completed: number }>();
-  const revenueMap = new Map<string, { date: string; amount: number; currency: string }>();
+  const projectsMap = generateTimeSeriesBuckets(config, { created: 0, completed: 0 });
+  const tasksMap = generateTimeSeriesBuckets(config, { created: 0, completed: 0 });
+  const revenueMap = generateTimeSeriesBuckets(config, { paidAmount: 0, amount: 0, currency: "" });
 
-  // Fill project created
   createdProjects.forEach((p) => {
-    const key = formatKey(p.createdAt);
-    const existing = projectsMap.get(key) || { date: key, created: 0, completed: 0 };
-    existing.created += 1;
-    projectsMap.set(key, existing);
+    const key = formatBucketKey(p.createdAt, unit);
+    const existing = projectsMap.get(key);
+    if (existing) existing.created += 1;
   });
-  // Fill project completed
   completedProjects.forEach((p) => {
-    const key = formatKey(p.updatedAt);
-    const existing = projectsMap.get(key) || { date: key, created: 0, completed: 0 };
-    existing.completed += 1;
-    projectsMap.set(key, existing);
+    const key = formatBucketKey(p.updatedAt, unit);
+    const existing = projectsMap.get(key);
+    if (existing) existing.completed += 1;
   });
 
-  // Fill task created
   createdTasks.forEach((t) => {
-    const key = formatKey(t.createdAt);
-    const existing = tasksMap.get(key) || { date: key, created: 0, completed: 0 };
-    existing.created += 1;
-    tasksMap.set(key, existing);
+    const key = formatBucketKey(t.createdAt, unit);
+    const existing = tasksMap.get(key);
+    if (existing) existing.created += 1;
   });
-  // Fill task completed
   completedTasks.forEach((t) => {
-    const key = formatKey(t.updatedAt);
-    const existing = tasksMap.get(key) || { date: key, created: 0, completed: 0 };
-    existing.completed += 1;
-    tasksMap.set(key, existing);
+    const key = formatBucketKey(t.updatedAt, unit);
+    const existing = tasksMap.get(key);
+    if (existing) existing.completed += 1;
   });
 
-  // Fill revenue
+  const workspace = await getWorkspaceOrThrow(workspaceId);
+  const primaryCurrency = workspace.currency || "USD";
+
   paidInvoices.forEach((i) => {
-    const key = formatKey(i.updatedAt) + "_" + i.currency;
-    const existing = revenueMap.get(key) || {
-      date: formatKey(i.updatedAt),
-      amount: 0,
-      currency: i.currency,
-    };
-    existing.amount += Number(i.amount);
-    revenueMap.set(key, existing);
+    if (i.currency !== primaryCurrency) return;
+    const key = formatBucketKey(i.updatedAt, unit);
+    const existing = revenueMap.get(key);
+    if (existing) {
+      existing.paidAmount += Number(i.amount);
+      existing.amount = existing.paidAmount;
+      existing.currency = i.currency;
+    }
   });
 
   return {
     scope: req.workspaceRole === WorkspaceMemberRole.MEMBER ? "member" : "workspace",
-    revenue: req.workspaceRole === WorkspaceMemberRole.MEMBER ? [] : Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
-    projects: Array.from(projectsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
-    tasks: Array.from(tasksMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    revenue:
+      req.workspaceRole === WorkspaceMemberRole.MEMBER ? [] : Array.from(revenueMap.values()),
+    projects: Array.from(projectsMap.values()),
+    tasks: Array.from(tasksMap.values()),
   };
 };
 
@@ -604,15 +706,21 @@ const getPlatformOverview = async (
   req: Request,
   _query: IPlatformDashboardOverviewQuery
 ): Promise<IPlatformDashboardOverviewResponse> => {
+  const thisMonthStart = startOfMonth(new Date());
+
   const [
     totalWorkspaces,
     activeWorkspaces,
+    newWorkspacesThisMonth,
     totalUsers,
     activeUsers,
+    newUsersThisMonth,
     paidSubscriptions,
     trialSubscriptions,
     totalInvoices,
+    paidInvoicesCount,
     overdueInvoices,
+    totalPaidAmountRows,
   ] = await Promise.all([
     prisma.workspace.count({ where: { deletedAt: null } }),
     prisma.workspace.count({
@@ -621,20 +729,48 @@ const getPlatformOverview = async (
         subscriptions: { some: { status: "ACTIVE" } },
       },
     }),
+    prisma.workspace.count({
+      where: { deletedAt: null, createdAt: { gte: thisMonthStart } },
+    }),
     prisma.user.count({ where: { isDeleted: false } }),
     prisma.user.count({ where: { isDeleted: false, isActive: true } }),
+    prisma.user.count({
+      where: { isDeleted: false, createdAt: { gte: thisMonthStart } },
+    }),
     prisma.subscription.count({ where: { status: "ACTIVE" } }),
     prisma.workspace.count({ where: { trialEndsAt: { gt: new Date() } } }),
     prisma.invoice.count({ where: { deletedAt: null } }),
+    prisma.invoice.count({ where: { deletedAt: null, status: InvoiceStatus.PAID } }),
     prisma.invoice.count({ where: { deletedAt: null, status: InvoiceStatus.OVERDUE } }),
+    prisma.invoice.aggregate({
+      where: { deletedAt: null, status: InvoiceStatus.PAID },
+      _sum: { amount: true },
+    }),
   ]);
 
   return {
     scope: "platform",
-    workspaces: { total: totalWorkspaces, active: activeWorkspaces },
-    users: { total: totalUsers, active: activeUsers },
-    subscriptions: { paid: paidSubscriptions, trial: trialSubscriptions },
-    invoices: { total: totalInvoices, overdue: overdueInvoices },
+    workspaces: {
+      total: totalWorkspaces,
+      active: activeWorkspaces,
+      newThisMonth: newWorkspacesThisMonth,
+    },
+    users: {
+      total: totalUsers,
+      active: activeUsers,
+      newThisMonth: newUsersThisMonth,
+    },
+    subscriptions: {
+      total: paidSubscriptions + trialSubscriptions,
+      paid: paidSubscriptions,
+      trial: trialSubscriptions,
+    },
+    invoices: {
+      total: totalInvoices,
+      paid: paidInvoicesCount,
+      overdue: overdueInvoices,
+      totalPaidAmount: Number(totalPaidAmountRows._sum.amount || 0),
+    },
   };
 };
 
@@ -696,148 +832,93 @@ const getPlatformMetrics = async (
   req: Request,
   query: IPlatformDashboardMetricsQuery
 ): Promise<IPlatformDashboardMetricsResponse> => {
-  let days = 30;
-  let aggregation: "day" | "week" | "month" = "day";
+  const config = getAggregationConfig(query.period || "last_30_days");
+  const { startDate, endDate, unit } = config;
 
-  switch (query.period) {
-    case "last_7_days":
-      days = 7;
-      aggregation = "day";
-      break;
-    case "last_30_days":
-      days = 30;
-      aggregation = "week";
-      break;
-    case "last_3_months":
-      days = 90;
-      aggregation = "month";
-      break;
-    case "last_12_months":
-      days = 365;
-      aggregation = "month";
-      break;
-  }
+  const [createdWorkspaces, createdUsers, createdSubscriptions, createdInvoices, paidInvoices] =
+    await Promise.all([
+      prisma.workspace.findMany({
+        where: { createdAt: { gte: startDate, lte: endDate } },
+        select: { createdAt: true },
+      }),
+      prisma.user.findMany({
+        where: { createdAt: { gte: startDate, lte: endDate } },
+        select: { createdAt: true },
+      }),
+      prisma.subscription.findMany({
+        where: { createdAt: { gte: startDate, lte: endDate } },
+        select: { createdAt: true, status: true },
+      }),
+      prisma.invoice.findMany({
+        where: { createdAt: { gte: startDate, lte: endDate } },
+        select: { createdAt: true, status: true },
+      }),
+      prisma.invoice.findMany({
+        where: {
+          status: InvoiceStatus.PAID,
+          updatedAt: { gte: startDate, lte: endDate },
+        },
+        select: { updatedAt: true, amount: true, currency: true },
+      }),
+    ]);
 
-  const endDate = new Date();
-  const startDate = new Date();
-  
-  if (aggregation === "month") {
-    startDate.setMonth(startDate.getMonth() - (query.period === "last_12_months" ? 11 : 2));
-    startDate.setDate(1);
-  } else if (aggregation === "week") {
-    startDate.setDate(startDate.getDate() - 28);
-  } else {
-    startDate.setDate(startDate.getDate() - 6);
-  }
-  startDate.setHours(0, 0, 0, 0);
-
-  const formatKey = (d: Date) => {
-    if (aggregation === "month") return d.toISOString().substring(0, 7);
-    if (aggregation === "week") {
-      const diffTime = Math.max(0, d.getTime() - startDate.getTime());
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      return `week_${Math.floor(diffDays / 7)}`;
-    }
-    return d.toISOString().split("T")[0];
-  };
-
-  const formatDateLabel = (d: Date) => {
-    if (aggregation === "month") {
-      return d.toLocaleDateString("en-US", { month: "short" });
-    }
-    if (aggregation === "week") {
-      const diffTime = Math.max(0, d.getTime() - startDate.getTime());
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      const weekNum = Math.floor(diffDays / 7) + 1;
-      return `Week ${weekNum}`;
-    }
-    return d.toLocaleDateString("en-US", { weekday: "short" });
-  };
-
-  const [
-    createdWorkspaces,
-    createdUsers,
-    createdSubscriptions,
-    createdInvoices,
-    paidInvoices,
-  ] = await Promise.all([
-    prisma.workspace.findMany({
-      where: { createdAt: { gte: startDate, lte: endDate } },
-      select: { createdAt: true },
-    }),
-    prisma.user.findMany({
-      where: { createdAt: { gte: startDate, lte: endDate } },
-      select: { createdAt: true },
-    }),
-    prisma.subscription.findMany({
-      where: { createdAt: { gte: startDate, lte: endDate } },
-      select: { createdAt: true, status: true },
-    }),
-    prisma.invoice.findMany({
-      where: { createdAt: { gte: startDate, lte: endDate } },
-      select: { createdAt: true, status: true },
-    }),
-    prisma.invoice.findMany({
-      where: {
-        status: InvoiceStatus.PAID,
-        updatedAt: { gte: startDate, lte: endDate },
-      },
-      select: { updatedAt: true, amount: true, currency: true },
-    }),
-  ]);
-
-
-
-  const workspacesMap = new Map<string, { date: string; created: number; completed: number }>();
-  const usersMap = new Map<string, { date: string; created: number; completed: number }>();
-  const subscriptionsMap = new Map<string, { date: string; trials: number; paid: number; canceled: number }>();
-  const invoicesMap = new Map<string, { date: string; created: number; paid: number }>();
-  const revenueMap = new Map<string, { date: string; amount: number; currency: string }>();
+  const workspacesMap = generateTimeSeriesBuckets(config, { created: 0, completed: 0 });
+  const usersMap = generateTimeSeriesBuckets(config, { created: 0, completed: 0 });
+  const subscriptionsMap = generateTimeSeriesBuckets(config, { trials: 0, paid: 0, canceled: 0 });
+  const invoicesMap = generateTimeSeriesBuckets(config, { created: 0, paid: 0 });
+  const revenueMap = generateTimeSeriesBuckets(config, {
+    paidAmount: 0,
+    amount: 0,
+    currency: "USD",
+  });
 
   createdWorkspaces.forEach((w) => {
-    const key = formatKey(w.createdAt);
-    const existing = workspacesMap.get(key) || { date: key, label: formatDateLabel(w.createdAt), created: 0, completed: 0 };
-    existing.created += 1;
-    workspacesMap.set(key, existing);
+    const key = formatBucketKey(w.createdAt, unit);
+    const existing = workspacesMap.get(key);
+    if (existing) existing.created += 1;
   });
 
   createdUsers.forEach((u) => {
-    const key = formatKey(u.createdAt);
-    const existing = usersMap.get(key) || { date: key, label: formatDateLabel(u.createdAt), created: 0, completed: 0 };
-    existing.created += 1;
-    usersMap.set(key, existing);
+    const key = formatBucketKey(u.createdAt, unit);
+    const existing = usersMap.get(key);
+    if (existing) existing.created += 1;
   });
 
   createdSubscriptions.forEach((s) => {
-    const key = formatKey(s.createdAt);
-    const existing = subscriptionsMap.get(key) || { date: key, label: formatDateLabel(s.createdAt), trials: 0, paid: 0, canceled: 0 };
-    if (s.status === "ACTIVE") existing.paid += 1;
-    else if (s.status === "CANCELED" || s.status === "PAST_DUE") existing.canceled += 1;
-    subscriptionsMap.set(key, existing);
+    const key = formatBucketKey(s.createdAt, unit);
+    const existing = subscriptionsMap.get(key);
+    if (existing) {
+      if (s.status === "ACTIVE") existing.paid += 1;
+      else if (s.status === "CANCELED" || s.status === "PAST_DUE") existing.canceled += 1;
+    }
   });
 
   createdInvoices.forEach((i) => {
-    const key = formatKey(i.createdAt);
-    const existing = invoicesMap.get(key) || { date: key, label: formatDateLabel(i.createdAt), created: 0, paid: 0 };
-    existing.created += 1;
-    if (i.status === InvoiceStatus.PAID) existing.paid += 1;
-    invoicesMap.set(key, existing);
+    const key = formatBucketKey(i.createdAt, unit);
+    const existing = invoicesMap.get(key);
+    if (existing) {
+      existing.created += 1;
+      if (i.status === InvoiceStatus.PAID) existing.paid += 1;
+    }
   });
 
   paidInvoices.forEach((i) => {
-    const key = formatKey(i.updatedAt) + "_" + i.currency;
-    const existing = revenueMap.get(key) || { date: formatKey(i.updatedAt), label: formatDateLabel(i.updatedAt), amount: 0, currency: i.currency };
-    existing.amount += Number(i.amount);
-    revenueMap.set(key, existing);
+    const key = formatBucketKey(i.updatedAt, unit);
+    const existing = revenueMap.get(key);
+    if (existing) {
+      existing.paidAmount += Number(i.amount);
+      existing.amount = existing.paidAmount;
+      existing.currency = i.currency;
+    }
   });
 
   return {
     scope: "platform",
-    revenue: Array.from(revenueMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
-    workspaces: Array.from(workspacesMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
-    users: Array.from(usersMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
-    subscriptions: Array.from(subscriptionsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
-    invoices: Array.from(invoicesMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    revenue: Array.from(revenueMap.values()),
+    workspaces: Array.from(workspacesMap.values()),
+    users: Array.from(usersMap.values()),
+    subscriptions: Array.from(subscriptionsMap.values()),
+    invoices: Array.from(invoicesMap.values()),
   };
 };
 

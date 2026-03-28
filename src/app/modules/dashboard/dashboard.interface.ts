@@ -91,14 +91,20 @@ export interface IWorkspaceDashboardMetricsQuery {
   period?: "last_7_days" | "last_30_days" | "last_3_months" | "last_12_months";
 }
 
-export interface ITimeSeriesRevenueDataPoint {
-  date: string;
-  amount: number;
+export interface ITimeSeriesPoint {
+  key: string;
+  bucketStart: string;
+  bucketEnd: string;
+  label: string;
+}
+
+export interface ITimeSeriesRevenueDataPoint extends ITimeSeriesPoint {
+  paidAmount: number;
+  amount: number; // @deprecated: use paidAmount
   currency: string;
 }
 
-export interface ITimeSeriesDataPoint {
-  date: string;
+export interface ITimeSeriesDataPoint extends ITimeSeriesPoint {
   created: number;
   completed: number;
 }
@@ -117,18 +123,23 @@ export interface IPlatformDashboardOverviewResponse {
   workspaces: {
     total: number;
     active: number;
+    newThisMonth: number;
   };
   users: {
     total: number;
     active: number;
+    newThisMonth: number;
   };
   subscriptions: {
+    total: number;
     paid: number;
     trial: number;
   };
   invoices: {
     total: number;
+    paid: number;
     overdue: number;
+    totalPaidAmount: number;
   };
 }
 
@@ -156,6 +167,6 @@ export interface IPlatformDashboardMetricsResponse {
   revenue: ITimeSeriesRevenueDataPoint[];
   workspaces: ITimeSeriesDataPoint[];
   users: ITimeSeriesDataPoint[];
-  subscriptions: { date: string; trials: number; paid: number; canceled: number }[];
-  invoices: { date: string; created: number; paid: number }[];
+  subscriptions: (ITimeSeriesPoint & { trials: number; paid: number; canceled: number })[];
+  invoices: (ITimeSeriesPoint & { created: number; paid: number })[];
 }
