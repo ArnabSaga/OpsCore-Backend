@@ -108,7 +108,7 @@ const getProjectsQuerySchema = z.object({
 const getProjectTasksQuerySchema = z.object({
   query: z.object({
     status: z.nativeEnum(TaskStatus).optional(),
-    assignedToUserId: z.string().uuid("Assigned user ID must be a valid UUID").optional(),
+    assignedToUserId: z.string().min(1, "Assigned user ID is required").optional(),
     page: z.coerce.number().int().min(1).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
     sortBy: z.enum(["createdAt", "updatedAt", "dueDate", "title", "status"]).optional(),
@@ -131,7 +131,7 @@ const assignProjectMembersSchema = z.object({
 const removeProjectMemberParamSchema = z.object({
   params: z.object({
     projectId: z.string().uuid("Project ID must be a valid UUID"),
-    memberId: z.string().uuid("Member ID (User ID) must be a valid UUID"),
+    memberId: z.string().min(1, "Member ID (User ID) is required"),
   }),
 });
 

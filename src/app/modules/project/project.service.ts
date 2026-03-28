@@ -119,33 +119,36 @@ const getProjects = async (
     const sortBy = query.sortBy ?? "createdAt";
     const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
 
-    const where: any = {
-      ...buildProjectBaseWhere(workspaceId, archived),
-    };
+    const andConditions: any[] = [buildProjectBaseWhere(workspaceId, archived)];
 
     if (workspaceRole === WorkspaceMemberRole.MEMBER) {
-      where.OR = [
-        ...(where.OR || []),
-        { members: { some: { userId } } },
-        { tasks: { some: { assignedToUserId: userId } } },
-      ];
+      andConditions.push({
+        OR: [
+          { members: { some: { userId } } },
+          { tasks: { some: { assignedToUserId: userId } } },
+        ],
+      });
     }
 
     if (query.searchTerm) {
-      where.OR = [
-        { name: { contains: query.searchTerm, mode: "insensitive" } },
-        { description: { contains: query.searchTerm, mode: "insensitive" } },
-        { clientName: { contains: query.searchTerm, mode: "insensitive" } },
-      ];
+      andConditions.push({
+        OR: [
+          { name: { contains: query.searchTerm, mode: "insensitive" } },
+          { description: { contains: query.searchTerm, mode: "insensitive" } },
+          { clientName: { contains: query.searchTerm, mode: "insensitive" } },
+        ],
+      });
     }
 
     if (query.status) {
-      where.status = query.status;
+      andConditions.push({ status: query.status });
     }
 
     if (query.clientName) {
-      where.clientName = { contains: query.clientName, mode: "insensitive" };
+      andConditions.push({ clientName: { contains: query.clientName, mode: "insensitive" } });
     }
+
+    const where = { AND: andConditions };
 
     const [projects, total] = await Promise.all([
       prisma.project.findMany({
@@ -164,7 +167,9 @@ const getProjects = async (
           },
           _count: {
             select: {
-              tasks: true,
+              tasks: {
+                where: { deletedAt: null },
+              },
               members: true,
             },
           },
@@ -242,7 +247,9 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
         },
         _count: {
           select: {
-            tasks: true,
+            tasks: {
+              where: { deletedAt: null },
+            },
             members: true,
           },
         },
@@ -324,7 +331,9 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
         },
         _count: {
           select: {
-            tasks: true,
+            tasks: {
+              where: { deletedAt: null },
+            },
             members: true,
           },
         },
@@ -432,7 +441,9 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
         },
         _count: {
           select: {
-            tasks: true,
+            tasks: {
+              where: { deletedAt: null },
+            },
             members: true,
           },
         },
