@@ -1,4 +1,4 @@
-import { ProjectStatus, TaskStatus } from "../../../generated/prisma/enums";
+import { ProjectStatus, TaskPriority, TaskStatus } from "../../../generated/prisma/enums";
 import { WorkspacePlan } from "../../config/planFeatures";
 
 export interface ICreateProjectPayload {
@@ -127,6 +127,7 @@ export interface IProjectTaskListItem {
   title: string;
   description: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
   dueDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -136,7 +137,27 @@ export interface IProjectTaskListItem {
     email: string;
     image: string | null;
   } | null;
+  createdByUser: {
+    id: string;
+    name: string;
+    email: string;
+    image: string | null;
+  };
+  _count: {
+    comments: number;
+    attachments: number;
+  };
 }
+
+export interface IProjectSummary {
+  totalTasks: number;
+  openTasks: number;
+  completedTasks: number;
+  overdueTasks: number;
+  completionRate: number;
+  recentActivity: IProjectTaskListItem[]; // Using recent tasks as activity for now
+}
+
 
 export interface IAssignProjectMembersResponse {
   projectId: string;

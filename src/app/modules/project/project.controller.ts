@@ -118,6 +118,40 @@ const assignProjectMembers = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const removeProjectMember = catchAsync(async (req: Request, res: Response) => {
+  await ProjectService.removeProjectMember(
+    req.user!.id,
+    req.workspaceRole!,
+    req.params.projectId as string,
+    req.params.memberId as string,
+    req.workspaceId!
+  );
+
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Project member removed successfully",
+  });
+});
+
+const getProjectSummary = catchAsync(async (req: Request, res: Response) => {
+  const result = await ProjectService.getProjectSummary(
+    req.user!.id,
+    req.workspaceRole!,
+    req.params.projectId as string,
+    req.workspaceId!
+  );
+
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Project summary fetched successfully",
+    data: result,
+  });
+});
+
 export const ProjectController = {
   getProjects,
   createProject,
@@ -127,4 +161,7 @@ export const ProjectController = {
   getProjectTasks,
   getProjectMembers,
   assignProjectMembers,
+  removeProjectMember,
+  getProjectSummary,
 };
+

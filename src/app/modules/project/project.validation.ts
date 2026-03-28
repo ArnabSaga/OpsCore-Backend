@@ -128,6 +128,13 @@ const assignProjectMembersSchema = z.object({
   }),
 });
 
+const removeProjectMemberParamSchema = z.object({
+  params: z.object({
+    projectId: z.string().uuid("Project ID must be a valid UUID"),
+    memberId: z.string().uuid("Member ID (User ID) must be a valid UUID"),
+  }),
+});
+
 export const ProjectValidation = {
   projectIdParamSchema,
   createProjectSchema,
@@ -135,4 +142,6 @@ export const ProjectValidation = {
   getProjectsQuerySchema,
   getProjectTasksQuerySchema,
   assignProjectMembersSchema,
+  removeProjectMemberParamSchema,
 };
+

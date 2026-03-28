@@ -61,6 +61,12 @@ router.get(
   ProjectController.getProjectMembers
 );
 
+router.get(
+  "/:projectId/summary",
+  validateRequest(ProjectValidation.projectIdParamSchema),
+  ProjectController.getProjectSummary
+);
+
 router.post(
   "/:projectId/members",
   validateRequest(ProjectValidation.projectIdParamSchema),
@@ -69,5 +75,13 @@ router.post(
   validateRequest(ProjectValidation.assignProjectMembersSchema),
   ProjectController.assignProjectMembers
 );
+
+router.delete(
+  "/:projectId/members/:memberId",
+  validateRequest(ProjectValidation.removeProjectMemberParamSchema),
+  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
+  ProjectController.removeProjectMember
+);
+
 
 export const ProjectRoutes = router;

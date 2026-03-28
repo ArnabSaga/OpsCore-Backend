@@ -17,10 +17,45 @@ import {
   IProjectMemberResponse,
   IProjectQuery,
   IProjectResponse,
+  IProjectSummary,
   IProjectTaskListItem,
   IProjectTaskQuery,
   IUpdateProjectPayload,
 } from "./project.interface";
+
+const getTaskSelect = {
+  id: true,
+  title: true,
+  description: true,
+  status: true,
+  priority: true,
+  dueDate: true,
+  createdAt: true,
+  updatedAt: true,
+  assignedToUser: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+    },
+  },
+  createdByUser: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+    },
+  },
+  _count: {
+    select: {
+      comments: true,
+      attachments: true,
+    },
+  },
+} as const;
+
 
 const buildProjectBaseWhere = (workspaceId: string, includeArchived = false) => {
   return {
@@ -469,26 +504,11 @@ const getProjectTasks = async (
         skip,
         take: limit,
         orderBy: { [sortBy]: sortOrder },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          status: true,
-          dueDate: true,
-          createdAt: true,
-          updatedAt: true,
-          assignedToUser: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-        },
+        select: getTaskSelect,
       }),
       prisma.task.count({ where }),
     ]);
+
 
     return {
       data: tasks,
@@ -614,6 +634,110 @@ const assignProjectMembers = async (req: Request): Promise<IAssignProjectMembers
   }
 };
 
+const removeProjectMember = async (
+  userId: string,
+  workspaceRole: string,
+  projectId: string,
+  memberIdToRemove: string,
+  workspaceId: string
+): Promise<void> => {
+  try {
+    await getScopedProjectOrThrow(userId, workspaceRole, projectId, workspaceId);
+
+    const projectMember = await prisma.projectMember.findUnique({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId: memberIdToRemove,
+        },
+      },
+    });
+
+    if (!projectMember) {
+      throw new AppError(status.NOT_FOUND, "Project member not found");
+    }
+
+    if (workspaceRole === WorkspaceMemberRole.MEMBER && userId !== memberIdToRemove) {
+      throw new AppError(status.FORBIDDEN, "You can only remove yourself from this project");
+    }
+
+    await prisma.projectMember.delete({
+      where: {
+        projectId_userId: {
+          projectId,
+          userId: memberIdToRemove,
+        },
+      },
+    });
+  } catch (error: any) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to remove project member");
+  }
+};
+
+const getProjectSummary = async (
+  userId: string,
+  workspaceRole: string,
+  projectId: string,
+  workspaceId: string
+): Promise<IProjectSummary> => {
+  try {
+    await getScopedProjectOrThrow(userId, workspaceRole, projectId, workspaceId);
+
+    const [totalTasks, openTasks, completedTasks, overdueTasks, recentActivity] =
+      await Promise.all([
+        prisma.task.count({
+          where: { projectId, workspaceId, deletedAt: null },
+        }),
+        prisma.task.count({
+          where: {
+            status: { not: "DONE" },
+            projectId,
+            workspaceId,
+            deletedAt: null,
+          },
+        }),
+        prisma.task.count({
+          where: {
+            status: "DONE",
+            projectId,
+            workspaceId,
+            deletedAt: null,
+          },
+        }),
+        prisma.task.count({
+          where: {
+            status: { not: "DONE" },
+            dueDate: { lt: new Date() },
+            projectId,
+            workspaceId,
+            deletedAt: null,
+          },
+        }),
+        prisma.task.findMany({
+          where: { projectId, workspaceId, deletedAt: null },
+          orderBy: { updatedAt: "desc" },
+          take: 5,
+          select: getTaskSelect,
+        }),
+      ]);
+
+    const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    return {
+      totalTasks,
+      openTasks,
+      completedTasks,
+      overdueTasks,
+      completionRate,
+      recentActivity,
+    };
+  } catch (error: any) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch project summary");
+  }
+};
+
 export const ProjectService = {
   getProjects,
   createProject,
@@ -623,4 +747,7 @@ export const ProjectService = {
   getProjectTasks,
   getProjectMembers,
   assignProjectMembers,
+  removeProjectMember,
+  getProjectSummary,
 };
+
