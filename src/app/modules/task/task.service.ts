@@ -89,7 +89,11 @@ const buildMemberTaskAccessWhere = (userId: string, workspaceRole: string) => {
   if (workspaceRole !== WorkspaceMemberRole.MEMBER) return {};
 
   return {
-    OR: [{ assignedToUserId: userId }, { createdByUserId: userId }],
+    OR: [
+      { assignedToUserId: userId },
+      { createdByUserId: userId },
+      { project: { members: { some: { userId } } } },
+    ],
   };
 };
 
@@ -348,6 +352,7 @@ const assertTaskUpdatePermission = (
   workspaceRole: string,
   payload: IUpdateTaskPayload,
   existingTask: {
+    projectId: string;
     assignedToUserId: string | null;
     createdByUserId: string;
     project: { archivedAt: Date | null; status: string };
@@ -369,7 +374,13 @@ const assertTaskUpdatePermission = (
     throw new AppError(status.FORBIDDEN, "You do not have permission to update this task");
   }
 
-  if (payload.projectId !== undefined || payload.assignedToUserId !== undefined) {
+  const isAssigneeChange =
+    payload.assignedToUserId !== undefined &&
+    payload.assignedToUserId !== existingTask.assignedToUserId;
+
+  const isProjectChange = payload.projectId !== undefined && payload.projectId !== existingTask.projectId;
+
+  if (isAssigneeChange || isProjectChange) {
     throw new AppError(
       status.FORBIDDEN,
       "Members can update only task progress fields, not assignment or project linkage"
@@ -377,15 +388,20 @@ const assertTaskUpdatePermission = (
   }
 
   const allowedKeys = ["title", "description", "status", "priority", "dueDate"] as const;
-  const disallowedKeys = Object.keys(payload).filter(
-    (key) => !allowedKeys.includes(key as (typeof allowedKeys)[number])
-  );
+
+  const disallowedKeys = Object.keys(payload).filter((key) => {
+    // Basic fields that are always allowed
+    if (allowedKeys.includes(key as (typeof allowedKeys)[number])) return false;
+
+    // Assignment/Project fields are checked above, so we allow them here IF they didn't change
+    if (key === "assignedToUserId" || key === "projectId") return false;
+
+    // If it's something else not in the allowed list, mark it as disallowed
+    return true;
+  });
 
   if (disallowedKeys.length > 0) {
-    throw new AppError(
-      status.FORBIDDEN,
-      "Members can update only task progress fields, not assignment or project linkage"
-    );
+    throw new AppError(status.FORBIDDEN, `Unauthorized update fields: ${disallowedKeys.join(", ")}`);
   }
 };
 
@@ -418,7 +434,11 @@ const getTasks = async (
 
     if (workspaceRole === WorkspaceMemberRole.MEMBER) {
       andConditions.push({
-        OR: [{ assignedToUserId: userId }, { createdByUserId: userId }],
+        OR: [
+          { assignedToUserId: userId },
+          { createdByUserId: userId },
+          { project: { members: { some: { userId } } } },
+        ],
       });
     }
 

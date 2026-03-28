@@ -77,7 +77,9 @@ const getScopedProjectOrThrow = async (
       workspaceId,
       deletedAt: null,
       ...(workspaceRole === WorkspaceMemberRole.MEMBER
-        ? { members: { some: { userId } } }
+        ? {
+            OR: [{ members: { some: { userId } } }, { tasks: { some: { assignedToUserId: userId } } }],
+          }
         : {}),
     },
     select: {
@@ -122,9 +124,11 @@ const getProjects = async (
     };
 
     if (workspaceRole === WorkspaceMemberRole.MEMBER) {
-      where.members = {
-        some: { userId },
-      };
+      where.OR = [
+        ...(where.OR || []),
+        { members: { some: { userId } } },
+        { tasks: { some: { assignedToUserId: userId } } },
+      ];
     }
 
     if (query.searchTerm) {
@@ -277,11 +281,22 @@ const getProject = async (req: Request): Promise<IProjectResponse> => {
         deletedAt: null,
         ...(req.workspaceRole === "MEMBER"
           ? {
-              members: {
-                some: {
-                  userId: req.user!.id,
+              OR: [
+                {
+                  members: {
+                    some: {
+                      userId: req.user!.id,
+                    },
+                  },
                 },
-              },
+                {
+                  tasks: {
+                    some: {
+                      assignedToUserId: req.user!.id,
+                    },
+                  },
+                },
+              ],
             }
           : {}),
       },

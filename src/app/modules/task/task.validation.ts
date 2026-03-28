@@ -40,7 +40,7 @@ const createTaskSchema = z.object({
       .max(5000, "Description cannot exceed 5000 characters")
       .optional(),
     assignedToUserId: z
-      .union([z.string().uuid("Assigned user ID must be a valid UUID"), z.null()])
+      .union([z.string().min(1, "Assigned user ID is required"), z.null()])
       .optional(),
     status: z.nativeEnum(TaskStatus).optional(),
     priority: z.nativeEnum(TaskPriority).optional(),
@@ -65,7 +65,7 @@ const updateTaskSchema = z.object({
         .nullable()
         .optional(),
       assignedToUserId: z
-        .union([z.string().uuid("Assigned user ID must be a valid UUID"), z.null()])
+        .union([z.string().min(1, "Assigned user ID is required"), z.null()])
         .optional(),
       status: z.nativeEnum(TaskStatus).optional(),
       priority: z.nativeEnum(TaskPriority).optional(),

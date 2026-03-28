@@ -119,7 +119,7 @@ const getProjectTasksQuerySchema = z.object({
 const assignProjectMembersSchema = z.object({
   body: z.object({
     userIds: z
-      .array(z.string().uuid("Each user ID must be a valid UUID"))
+      .array(z.string().min(1, "Each user ID must be a non-empty string"))
       .min(1, "At least one user ID must be provided")
       .max(100, "You can assign up to 100 users at a time")
       .refine((userIds) => new Set(userIds).size === userIds.length, {
