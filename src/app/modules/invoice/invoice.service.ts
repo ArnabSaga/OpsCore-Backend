@@ -7,6 +7,7 @@ import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import { assertPlanFeatureEnabled, assertPlanLimitNotReached } from "../../utils/checkPlanLimit";
 import { sendEmail } from "../../utils/email";
+import { startOfToday } from "date-fns";
 import {
   ICreateInvoicePayload,
   IInvoiceListItem,
@@ -14,7 +15,13 @@ import {
   IInvoiceResponse,
   IUpdateInvoicePayload,
 } from "./invoice.interface";
-import { formatMoney, generateInvoicePdf, mapInvoiceToEmailTemplateData } from "./invoice.utils";
+import {
+  deriveInvoiceState,
+  formatMoney,
+  generateInvoicePdf,
+  mapInvoiceBase,
+  mapInvoiceToEmailTemplateData,
+} from "./invoice.utils";
 import { calculateInvoiceStatus } from "../../utils/calculateInvoiceStatus";
 
 
@@ -137,30 +144,10 @@ const getScopedInvoiceOrThrow = async (invoiceId: string, workspaceId: string) =
 const mapInvoiceResponse = (
   invoice: Prisma.InvoiceGetPayload<{ select: typeof getInvoiceSelect }>
 ): IInvoiceResponse => {
+  const base = mapInvoiceBase(invoice as any);
+
   return {
-    id: invoice.id,
-    workspaceId: invoice.workspaceId,
-    createdByUserId: invoice.createdByUserId,
-    invoiceNumber: invoice.invoiceNumber,
-    amount: formatMoney(invoice.amount),
-    currency: invoice.currency,
-    status: invoice.status,
-    customerName: invoice.customerName,
-    customerEmail: invoice.customerEmail,
-    notes: invoice.notes,
-    issuedAt: invoice.issuedAt,
-    sentAt: invoice.sentAt,
-    dueAt: invoice.dueAt,
-    paidAt: invoice.paidAt,
-    canceledAt: invoice.canceledAt,
-    createdAt: invoice.createdAt,
-    updatedAt: invoice.updatedAt,
-    createdByUser: {
-      id: invoice.createdByUser.id,
-      name: invoice.createdByUser.name,
-      email: invoice.createdByUser.email,
-      image: invoice.createdByUser.image,
-    },
+    ...base,
     items: invoice.items.map((item) => ({
       id: item.id,
       workspaceId: item.workspaceId,
@@ -210,7 +197,19 @@ const getInvoices = async (
       });
     }
 
-    if (query.status) {
+    if (query.status === InvoiceStatus.OVERDUE) {
+      andConditions.push({
+        dueAt: { lt: startOfToday() },
+        paidAt: null,
+        canceledAt: null,
+      });
+    } else if (query.status === InvoiceStatus.PENDING) {
+      andConditions.push({
+        OR: [{ dueAt: null }, { dueAt: { gte: startOfToday() } }],
+        paidAt: null,
+        canceledAt: null,
+      });
+    } else if (query.status) {
       andConditions.push({ status: query.status });
     }
 
@@ -224,8 +223,9 @@ const getInvoices = async (
 
     if (query.overdue === "true") {
       andConditions.push({
-        dueAt: { lt: new Date() },
-        status: { notIn: [InvoiceStatus.PAID, InvoiceStatus.CANCELED] },
+        dueAt: { lt: startOfToday() },
+        paidAt: null,
+        canceledAt: null,
       });
     }
 
@@ -276,34 +276,15 @@ const getInvoices = async (
     ]);
 
     return {
-      data: invoices.map((invoice) => ({
-        id: invoice.id,
-        workspaceId: invoice.workspaceId,
-        createdByUserId: invoice.createdByUserId,
-        invoiceNumber: invoice.invoiceNumber,
-        amount: formatMoney(invoice.amount),
-        currency: invoice.currency,
-        status: invoice.status,
-        customerName: invoice.customerName,
-        customerEmail: invoice.customerEmail,
-        notes: invoice.notes,
-        issuedAt: invoice.issuedAt,
-        sentAt: invoice.sentAt,
-        dueAt: invoice.dueAt,
-        paidAt: invoice.paidAt,
-        canceledAt: invoice.canceledAt,
-        createdAt: invoice.createdAt,
-        updatedAt: invoice.updatedAt,
-        createdByUser: {
-          id: invoice.createdByUser.id,
-          name: invoice.createdByUser.name,
-          email: invoice.createdByUser.email,
-          image: invoice.createdByUser.image,
-        },
-        _count: {
-          items: invoice._count.items,
-        },
-      })),
+      data: invoices.map((invoice) => {
+        const base = mapInvoiceBase(invoice as any);
+        return {
+          ...base,
+          _count: {
+            items: invoice._count.items,
+          },
+        };
+      }),
       meta: {
         page,
         limit,
@@ -419,12 +400,14 @@ const updateInvoice = async (req: Request): Promise<IInvoiceResponse> => {
 
     const existingInvoice = await getScopedInvoiceOrThrow(invoiceId, workspaceId);
 
-    if (existingInvoice.status === InvoiceStatus.PAID) {
-      throw new AppError(status.BAD_REQUEST, "Paid invoices cannot be updated");
-    }
+    const { liveStatus, actions } = deriveInvoiceState(existingInvoice);
 
-    if (existingInvoice.status === InvoiceStatus.CANCELED) {
-      throw new AppError(status.BAD_REQUEST, "Canceled invoices cannot be updated");
+    if (!actions.canEdit) {
+      const reason =
+        liveStatus === InvoiceStatus.PAID
+          ? "Paid invoices cannot be edited."
+          : "Canceled invoices cannot be edited.";
+      throw new AppError(status.BAD_REQUEST, reason);
     }
 
     let rebuiltItems:
@@ -509,11 +492,14 @@ const deleteInvoice = async (req: Request): Promise<void> => {
 
     const existingInvoice = await getScopedInvoiceOrThrow(invoiceId, workspaceId);
 
-    if (
-      existingInvoice.status !== InvoiceStatus.PENDING &&
-      existingInvoice.status !== InvoiceStatus.CANCELED
-    ) {
-      throw new AppError(status.BAD_REQUEST, "Only pending or canceled invoices can be deleted");
+    const { liveStatus, actions } = deriveInvoiceState(existingInvoice);
+
+    if (!actions.canDelete) {
+      const reason =
+        liveStatus === InvoiceStatus.PAID
+          ? "Paid invoices cannot be deleted."
+          : "Only pending or canceled invoices can be deleted.";
+      throw new AppError(status.BAD_REQUEST, reason);
     }
 
     await prisma.invoice.update({
@@ -537,7 +523,9 @@ const sendInvoice = async (req: Request): Promise<IInvoiceResponse> => {
 
     const existingInvoice = await getScopedInvoiceOrThrow(invoiceId, workspaceId);
 
-    if (existingInvoice.status === InvoiceStatus.CANCELED) {
+    const { actions } = deriveInvoiceState(existingInvoice);
+
+    if (!actions.canSend) {
       throw new AppError(status.BAD_REQUEST, "Canceled invoices cannot be sent");
     }
 
@@ -591,12 +579,14 @@ const markInvoicePaid = async (req: Request): Promise<IInvoiceResponse> => {
 
     const existingInvoice = await getScopedInvoiceOrThrow(invoiceId, workspaceId);
 
-    if (existingInvoice.status === InvoiceStatus.CANCELED) {
-      throw new AppError(status.BAD_REQUEST, "Canceled invoices cannot be marked as paid");
-    }
+    const { liveStatus, actions } = deriveInvoiceState(existingInvoice);
 
-    if (existingInvoice.status === InvoiceStatus.PAID) {
-      throw new AppError(status.BAD_REQUEST, "Invoice is already paid");
+    if (!actions.canMarkPaid) {
+      const reason =
+        liveStatus === InvoiceStatus.PAID
+          ? "Invoice is already paid."
+          : "Canceled invoices cannot be marked as paid.";
+      throw new AppError(status.BAD_REQUEST, reason);
     }
 
     const invoice = await prisma.invoice.update({
@@ -623,12 +613,14 @@ const cancelInvoice = async (req: Request): Promise<IInvoiceResponse> => {
 
     const existingInvoice = await getScopedInvoiceOrThrow(invoiceId, workspaceId);
 
-    if (existingInvoice.status === InvoiceStatus.PAID) {
-      throw new AppError(status.BAD_REQUEST, "Paid invoices cannot be canceled");
-    }
+    const { liveStatus, actions } = deriveInvoiceState(existingInvoice);
 
-    if (existingInvoice.status === InvoiceStatus.CANCELED) {
-      throw new AppError(status.BAD_REQUEST, "Invoice is already canceled");
+    if (!actions.canCancel) {
+      const reason =
+        liveStatus === InvoiceStatus.PAID
+          ? "Paid invoices cannot be canceled."
+          : "Invoice is already canceled.";
+      throw new AppError(status.BAD_REQUEST, reason);
     }
 
     const invoice = await prisma.invoice.update({
@@ -648,6 +640,42 @@ const cancelInvoice = async (req: Request): Promise<IInvoiceResponse> => {
   }
 };
 
+const getInvoicePdf = async (req: Request): Promise<{ buffer: Buffer; filename: string }> => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const invoiceId = req.params.invoiceId as string;
+
+    await getScopedInvoiceOrThrow(invoiceId, workspaceId);
+
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        id: invoiceId,
+        workspaceId,
+        deletedAt: null,
+        workspace: {
+          deletedAt: null,
+        },
+      },
+      select: getInvoiceSelect,
+    });
+
+    if (!invoice) {
+      throw new AppError(status.NOT_FOUND, "Invoice not found");
+    }
+
+    const mappedInvoice = mapInvoiceResponse(invoice);
+    const pdfBuffer = await generateInvoicePdf(mappedInvoice);
+
+    return {
+      buffer: pdfBuffer,
+      filename: `${mappedInvoice.invoiceNumber}.pdf`,
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to generate invoice PDF");
+  }
+};
+
 export const InvoiceService = {
   getInvoices,
   createInvoice,
@@ -657,4 +685,6 @@ export const InvoiceService = {
   sendInvoice,
   markInvoicePaid,
   cancelInvoice,
+  getInvoicePdf,
 };
+

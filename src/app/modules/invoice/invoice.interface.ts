@@ -35,6 +35,49 @@ export interface IInvoiceQuery {
   sortOrder?: "asc" | "desc";
 }
 
+export interface IInvoiceActionFlags {
+  canEdit: boolean;
+  canDelete: boolean;
+  canSend: boolean;
+  canMarkPaid: boolean;
+  canCancel: boolean;
+  canPreviewPdf: boolean;
+}
+
+export interface IInvoiceBase {
+  id: string;
+  workspaceId: string;
+  createdByUserId: string;
+  invoiceNumber: string;
+  amount: string;
+  currency: string;
+  status: InvoiceStatus;
+  isOverdue: boolean;
+  customerName: string | null;
+  customerEmail: string | null;
+  notes: string | null;
+  issuedAt: Date | null;
+  sentAt: Date | null;
+  dueAt: Date | null;
+  paidAt: Date | null;
+  canceledAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  actions: IInvoiceActionFlags;
+  createdByUser: {
+    id: string;
+    name: string;
+    email: string;
+    image: string | null;
+  };
+}
+
+export interface IInvoiceListItem extends IInvoiceBase {
+  _count: {
+    items: number;
+  };
+}
+
 export interface IInvoiceItemResponse {
   id: string;
   workspaceId: string;
@@ -46,58 +89,7 @@ export interface IInvoiceItemResponse {
   createdAt: Date;
 }
 
-export interface IInvoiceListItem {
-  id: string;
-  workspaceId: string;
-  createdByUserId: string;
-  invoiceNumber: string;
-  amount: string;
-  currency: string;
-  status: InvoiceStatus;
-  customerName: string | null;
-  customerEmail: string | null;
-  notes: string | null;
-  issuedAt: Date | null;
-  sentAt: Date | null;
-  dueAt: Date | null;
-  paidAt: Date | null;
-  canceledAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-  createdByUser: {
-    id: string;
-    name: string;
-    email: string;
-    image: string | null;
-  };
-  _count: {
-    items: number;
-  };
-}
-
-export interface IInvoiceResponse {
-  id: string;
-  workspaceId: string;
-  createdByUserId: string;
-  invoiceNumber: string;
-  amount: string;
-  currency: string;
-  status: InvoiceStatus;
-  customerName: string | null;
-  customerEmail: string | null;
-  notes: string | null;
-  issuedAt: Date | null;
-  sentAt: Date | null;
-  dueAt: Date | null;
-  paidAt: Date | null;
-  canceledAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-  createdByUser: {
-    id: string;
-    name: string;
-    email: string;
-    image: string | null;
-  };
+export interface IInvoiceResponse extends IInvoiceBase {
   items: IInvoiceItemResponse[];
 }
+

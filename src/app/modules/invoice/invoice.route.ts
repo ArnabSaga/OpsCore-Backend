@@ -72,4 +72,12 @@ router.post(
   InvoiceController.cancelInvoice
 );
 
+router.get(
+  "/:invoiceId/pdf",
+  requireRole(WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN),
+  validateRequest(InvoiceValidation.invoiceIdParamSchema),
+  InvoiceController.getInvoicePdf
+);
+
+
 export const InvoiceRoutes = router;

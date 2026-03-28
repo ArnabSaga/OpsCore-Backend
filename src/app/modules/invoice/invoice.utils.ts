@@ -1,6 +1,8 @@
 import PDFDocument from "pdfkit";
-import { IInvoiceResponse } from "./invoice.interface";
-import { Prisma } from '../../../generated/prisma/client';
+import { Invoice, Prisma } from "../../../generated/prisma/client";
+import { InvoiceStatus } from "../../../generated/prisma/enums";
+import { calculateInvoiceStatus } from "../../utils/calculateInvoiceStatus";
+import { IInvoiceActionFlags, IInvoiceBase, IInvoiceResponse } from "./invoice.interface";
 
 export interface InvoiceEmailItem {
   description: string;
@@ -74,6 +76,74 @@ export const mapInvoiceToEmailTemplateData = (
     supportEmail: options?.supportEmail,
     year: new Date().getFullYear(),
     appName: options?.appName ?? "OpsCore",
+  };
+};
+
+export const deriveInvoiceState = (
+  invoice: Pick<Invoice, "dueAt" | "paidAt" | "canceledAt">
+): { liveStatus: InvoiceStatus; isOverdue: boolean; actions: IInvoiceActionFlags } => {
+  const liveStatus = calculateInvoiceStatus({
+    dueDate: invoice.dueAt,
+    paidAt: invoice.paidAt,
+    canceledAt: invoice.canceledAt,
+  }) as InvoiceStatus;
+
+  const isOverdue = liveStatus === "OVERDUE";
+
+  const actions: IInvoiceActionFlags = {
+    canEdit: liveStatus === "PENDING" || liveStatus === "OVERDUE",
+    canDelete: liveStatus === "PENDING" || liveStatus === "CANCELED",
+    canSend: liveStatus !== "CANCELED",
+    canMarkPaid: liveStatus !== "CANCELED" && liveStatus !== "PAID",
+    canCancel: liveStatus !== "PAID" && liveStatus !== "CANCELED",
+    canPreviewPdf: true,
+  };
+
+  return { liveStatus, isOverdue, actions };
+};
+
+export type PrismaInvoicePayload = Prisma.InvoiceGetPayload<{
+  include: {
+    createdByUser: {
+      select: {
+        id: true;
+        name: true;
+        email: true;
+        image: true;
+      };
+    };
+  };
+}>;
+
+export const mapInvoiceBase = (invoice: PrismaInvoicePayload): IInvoiceBase => {
+  const { liveStatus, isOverdue, actions } = deriveInvoiceState(invoice);
+
+  return {
+    id: invoice.id,
+    workspaceId: invoice.workspaceId,
+    createdByUserId: invoice.createdByUserId,
+    invoiceNumber: invoice.invoiceNumber,
+    amount: formatMoney(invoice.amount),
+    currency: invoice.currency,
+    status: liveStatus,
+    isOverdue,
+    customerName: invoice.customerName,
+    customerEmail: invoice.customerEmail,
+    notes: invoice.notes,
+    issuedAt: invoice.issuedAt,
+    sentAt: invoice.sentAt,
+    dueAt: invoice.dueAt,
+    paidAt: invoice.paidAt,
+    canceledAt: invoice.canceledAt,
+    createdAt: invoice.createdAt,
+    updatedAt: invoice.updatedAt,
+    actions,
+    createdByUser: {
+      id: invoice.createdByUser.id,
+      name: invoice.createdByUser.name,
+      email: invoice.createdByUser.email,
+      image: invoice.createdByUser.image,
+    },
   };
 };
 
@@ -270,3 +340,4 @@ export const generateInvoicePdf = async (invoice: IInvoiceResponse): Promise<Buf
     }
   });
 };
+

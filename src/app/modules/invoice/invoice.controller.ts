@@ -104,6 +104,19 @@ const cancelInvoice = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getInvoicePdf = catchAsync(async (req: Request, res: Response) => {
+  const result = await InvoiceService.getInvoicePdf(req);
+  const download = req.query.download === "true";
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `${download ? "attachment" : "inline"}; filename="${result.filename}"`
+  );
+
+  res.status(status.OK).send(result.buffer);
+});
+
 export const InvoiceController = {
   getInvoices,
   createInvoice,
@@ -113,4 +126,6 @@ export const InvoiceController = {
   sendInvoice,
   markInvoicePaid,
   cancelInvoice,
+  getInvoicePdf,
 };
+
