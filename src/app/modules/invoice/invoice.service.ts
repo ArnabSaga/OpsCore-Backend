@@ -13,8 +13,11 @@ import {
   IInvoiceListItem,
   IInvoiceQuery,
   IInvoiceResponse,
+  IPlatformInvoiceQuery,
+  IPlatformInvoicesResponse,
   IUpdateInvoicePayload,
 } from "./invoice.interface";
+
 import {
   deriveInvoiceState,
   formatMoney,
@@ -676,6 +679,172 @@ const getInvoicePdf = async (req: Request): Promise<{ buffer: Buffer; filename: 
   }
 };
 
+const getPlatformVisibilityWhere = (): Prisma.InvoiceWhereInput => {
+  return {
+    deletedAt: null,
+    workspace: {
+      deletedAt: null,
+    },
+  };
+};
+
+const buildOverdueClause = (now: Date): Prisma.InvoiceWhereInput => {
+  return {
+    dueAt: { lt: now },
+    paidAt: null,
+    canceledAt: null,
+  };
+};
+
+const getPlatformInvoices = async (
+  query: IPlatformInvoiceQuery
+): Promise<IPlatformInvoicesResponse> => {
+  try {
+    const now = new Date();
+    const page = Math.max(Number(query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const sortBy = query.sortBy || "createdAt";
+    const sortOrder = query.sortOrder || "desc";
+
+    const visibilityWhere = getPlatformVisibilityWhere();
+    const baseWhere: Prisma.InvoiceWhereInput = {
+      ...visibilityWhere,
+    };
+
+    const andConditions: Prisma.InvoiceWhereInput[] = [];
+
+    const trimmedSearch = query.searchTerm?.trim();
+    if (trimmedSearch) {
+      andConditions.push({
+        OR: [
+          { invoiceNumber: { contains: trimmedSearch, mode: "insensitive" } },
+          { customerName: { contains: trimmedSearch, mode: "insensitive" } },
+          { customerEmail: { contains: trimmedSearch, mode: "insensitive" } },
+          { notes: { contains: trimmedSearch, mode: "insensitive" } },
+          { workspace: { name: { contains: trimmedSearch, mode: "insensitive" } } },
+        ],
+      });
+    }
+
+    if (query.workspaceId) {
+      andConditions.push({ workspaceId: query.workspaceId });
+    }
+
+    if (query.status === InvoiceStatus.OVERDUE || query.overdue === "true") {
+      andConditions.push(buildOverdueClause(now));
+    } else if (query.status === InvoiceStatus.PENDING) {
+      andConditions.push({
+        OR: [{ dueAt: null }, { dueAt: { gte: now } }],
+        paidAt: null,
+        canceledAt: null,
+      });
+    } else if (query.status) {
+      andConditions.push({ status: query.status });
+    }
+
+    if (andConditions.length > 0) {
+      baseWhere.AND = andConditions;
+    }
+
+    let orderBy: any = { [sortBy]: sortOrder };
+    if (sortBy === "workspaceName") {
+      orderBy = { workspace: { name: sortOrder } };
+    }
+
+    const [invoices, total] = await Promise.all([
+      prisma.invoice.findMany({
+        where: baseWhere,
+        skip,
+        take: limit,
+        orderBy,
+        select: {
+          ...getInvoiceSelect,
+          workspace: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          _count: {
+            select: {
+              items: true,
+            },
+          },
+        },
+      }),
+      prisma.invoice.count({ where: baseWhere }),
+    ]);
+
+    // Global stats - computed from the full visible platform dataset
+    const globalVisibilityWhere = getPlatformVisibilityWhere();
+
+    const [totalInvoices, activeWorkspaces, overdueData, paidData, pendingData] = await Promise.all([
+      prisma.invoice.count({ where: globalVisibilityWhere }),
+      prisma.invoice
+        .groupBy({
+          by: ["workspaceId"],
+          where: globalVisibilityWhere,
+        })
+        .then((res) => res.length),
+      prisma.invoice.aggregate({
+        where: {
+          ...globalVisibilityWhere,
+          ...buildOverdueClause(now),
+        },
+        _count: true,
+        _sum: { amount: true },
+      }),
+      prisma.invoice.aggregate({
+        where: {
+          ...globalVisibilityWhere,
+          status: InvoiceStatus.PAID,
+        },
+        _sum: { amount: true },
+      }),
+      prisma.invoice.aggregate({
+        where: {
+          ...globalVisibilityWhere,
+          status: InvoiceStatus.PENDING,
+          NOT: buildOverdueClause(now),
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    return {
+      data: invoices.map((invoice: any) => {
+        const base = mapInvoiceBase(invoice as any);
+        return {
+          ...base,
+          workspaceName: invoice.workspace.name,
+          _count: {
+            items: invoice._count.items,
+          },
+        };
+      }),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+      stats: {
+        totalInvoices,
+        activeWorkspaces,
+        overdueInvoices: overdueData._count,
+        overdueAmount: formatMoney(overdueData._sum.amount || new Prisma.Decimal(0)),
+        paidAmount: formatMoney(paidData._sum.amount || new Prisma.Decimal(0)),
+        pendingAmount: formatMoney(pendingData._sum.amount || new Prisma.Decimal(0)),
+      },
+    };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to fetch platform invoices");
+  }
+};
+
 export const InvoiceService = {
   getInvoices,
   createInvoice,
@@ -686,5 +855,7 @@ export const InvoiceService = {
   markInvoicePaid,
   cancelInvoice,
   getInvoicePdf,
+  getPlatformInvoices,
 };
+
 

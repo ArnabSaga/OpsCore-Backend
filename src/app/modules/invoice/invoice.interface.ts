@@ -93,3 +93,39 @@ export interface IInvoiceResponse extends IInvoiceBase {
   items: IInvoiceItemResponse[];
 }
 
+export interface IPlatformInvoiceQuery {
+  searchTerm?: string;
+  status?: InvoiceStatus;
+  workspaceId?: string;
+  overdue?: "true" | "false";
+  page?: string;
+  limit?: string;
+  sortBy?: "createdAt" | "updatedAt" | "dueAt" | "amount" | "invoiceNumber" | "status" | "workspaceName";
+  sortOrder?: "asc" | "desc";
+}
+
+export interface IPlatformInvoiceOverviewStats {
+  totalInvoices: number;
+  activeWorkspaces: number;
+  overdueInvoices: number;
+  overdueAmount: string;
+  paidAmount: string;
+  pendingAmount: string;
+}
+
+export interface IPlatformInvoiceListItem extends IInvoiceListItem {
+  workspaceName: string;
+}
+
+export interface IPlatformInvoicesResponse {
+  data: IPlatformInvoiceListItem[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  stats: IPlatformInvoiceOverviewStats;
+}
+
+

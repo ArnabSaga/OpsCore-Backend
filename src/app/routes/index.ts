@@ -10,6 +10,7 @@ import {
   InvitationWorkspaceRoutes,
 } from "../modules/invitation/invitation.route";
 import { InvoiceRoutes } from "../modules/invoice/invoice.route";
+import { PlatformInvoiceRoutes } from "../modules/invoice/platform-invoice.route";
 import { ProjectRoutes } from "../modules/project/project.route";
 import { TaskRoutes } from "../modules/task/task.route";
 import { UserRoutes } from "../modules/user/user.route";
@@ -27,6 +28,9 @@ const moduleRoutes: TModuleRoutes[] = [
   // Core
   { path: "/auth", route: AuthRoutes },
   { path: "/account", route: UserRoutes },
+
+  // Platform Oversight
+  { path: "/platform/invoices", route: PlatformInvoiceRoutes },
 
   // Workspace
   { path: "/workspaces", route: WorkspaceRoutes },
@@ -48,6 +52,7 @@ const moduleRoutes: TModuleRoutes[] = [
   // Public token actions
   { path: "/invitations", route: InvitationActionRoutes },
 ];
+
 
 moduleRoutes.forEach((route) => router.use(route.path, route.route));
 

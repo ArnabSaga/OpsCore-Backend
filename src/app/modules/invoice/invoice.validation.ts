@@ -92,9 +92,34 @@ const getInvoicesQuerySchema = z.object({
   }),
 });
 
+const getPlatformInvoicesQuerySchema = z.object({
+  query: z.object({
+    searchTerm: z.string().trim().optional(),
+    status: z.enum(["PENDING", "PAID", "OVERDUE", "CANCELED"]).optional(),
+    workspaceId: z.string().uuid("Workspace ID must be a valid UUID").optional(),
+    overdue: z.enum(["true", "false"]).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
+    sortBy: z
+      .enum([
+        "createdAt",
+        "updatedAt",
+        "dueAt",
+        "amount",
+        "invoiceNumber",
+        "status",
+        "workspaceName",
+      ])
+      .default("createdAt"),
+    sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  }),
+});
+
 export const InvoiceValidation = {
   invoiceIdParamSchema,
   createInvoiceSchema,
   updateInvoiceSchema,
   getInvoicesQuerySchema,
+  getPlatformInvoicesQuerySchema,
 };
+

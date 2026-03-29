@@ -117,6 +117,30 @@ const getInvoicePdf = catchAsync(async (req: Request, res: Response) => {
   res.status(status.OK).send(result.buffer);
 });
 
+const getPlatformInvoices = catchAsync(async (req: Request, res: Response) => {
+  const query = pick(req.query as any, [
+    "searchTerm",
+    "status",
+    "workspaceId",
+    "overdue",
+    "page",
+    "limit",
+    "sortBy",
+    "sortOrder",
+  ]);
+
+  const result = await InvoiceService.getPlatformInvoices(query);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Platform invoices fetched successfully",
+    data: result.data,
+    meta: result.meta,
+    stats: result.stats,
+  });
+});
+
 export const InvoiceController = {
   getInvoices,
   createInvoice,
@@ -127,5 +151,7 @@ export const InvoiceController = {
   markInvoicePaid,
   cancelInvoice,
   getInvoicePdf,
+  getPlatformInvoices,
 };
+
 
