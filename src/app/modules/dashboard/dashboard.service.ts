@@ -229,6 +229,32 @@ const mapGroupedCount = <T extends string>(
 const buildVisibleProjectWhere = (req: Request): Prisma.ProjectWhereInput => {
   const workspaceId = req.workspaceId!;
   const isMember = req.workspaceRole === WorkspaceMemberRole.MEMBER;
+  const userId = req.user!.id;
+
+  if (!isMember) {
+    return {
+      workspaceId,
+      deletedAt: null,
+      workspace: {
+        deletedAt: null,
+      },
+    };
+  }
+
+  // Projects are visible to members if they are explicit project members,
+  // the project creator, or if they have tasks assigned/created in the project.
+  const memberProjectVisibility: Prisma.ProjectWhereInput[] = [
+    { members: { some: { userId } } },
+    { createdByUserId: userId },
+    {
+      tasks: {
+        some: {
+          deletedAt: null,
+          OR: [{ assignedToUserId: userId }, { createdByUserId: userId }],
+        },
+      },
+    },
+  ];
 
   return {
     workspaceId,
@@ -236,15 +262,7 @@ const buildVisibleProjectWhere = (req: Request): Prisma.ProjectWhereInput => {
     workspace: {
       deletedAt: null,
     },
-    ...(isMember
-      ? {
-          members: {
-            some: {
-              userId: req.user!.id,
-            },
-          },
-        }
-      : {}),
+    OR: memberProjectVisibility,
   };
 };
 
@@ -396,8 +414,7 @@ const getOverview = async (
   const { start: todayStart, end: todayEnd } = buildTodayRange();
 
   const [
-    projectTotal,
-    groupedProjects,
+    visibleProjects,
     taskTotal,
     groupedTasks,
     overdueTasks,
@@ -406,12 +423,14 @@ const getOverview = async (
     createdByMeTasks,
     invoiceSummary,
   ] = await Promise.all([
-    prisma.project.count({ where: projectWhere }),
-    prisma.project.groupBy({
-      by: ["status"],
+    prisma.project.findMany({
       where: projectWhere,
-      _count: {
-        _all: true,
+      select: {
+        status: true,
+        tasks: {
+          where: { deletedAt: null },
+          select: { status: true },
+        },
       },
     }),
     prisma.task.count({ where: taskWhere }),
@@ -467,8 +486,31 @@ const getOverview = async (
     invoiceWhere ? getInvoiceSummary(invoiceWhere) : Promise.resolve(null),
   ]);
 
-  const projectStatusMap = mapGroupedCount<ProjectStatus>(groupedProjects);
   const taskStatusMap = mapGroupedCount<TaskStatus>(groupedTasks);
+
+  const projectStats = {
+    total: visibleProjects.length,
+    active: 0,
+    completed: 0,
+    onHold: 0,
+    archived: 0,
+  };
+
+  visibleProjects.forEach((p) => {
+    const totalTasks = p.tasks.length;
+    const doneTasks = p.tasks.filter((t) => t.status === TaskStatus.DONE).length;
+
+    // Use "Virtual Completion": if all tasks are done in an ACTIVE project, count it as COMPLETED for the dashboard view
+    let effectiveStatus: ProjectStatus = p.status as ProjectStatus;
+    if (totalTasks > 0 && doneTasks === totalTasks && p.status === ProjectStatus.ACTIVE) {
+      effectiveStatus = ProjectStatus.COMPLETED;
+    }
+
+    if (effectiveStatus === ProjectStatus.ACTIVE) projectStats.active++;
+    else if (effectiveStatus === ProjectStatus.COMPLETED) projectStats.completed++;
+    else if (effectiveStatus === ProjectStatus.ON_HOLD) projectStats.onHold++;
+    else if (effectiveStatus === ProjectStatus.ARCHIVED) projectStats.archived++;
+  });
 
   return {
     scope: isMember ? "member" : "workspace",
@@ -488,13 +530,7 @@ const getOverview = async (
           billingCycleStartsAt: planContext.billingCycleStartsAt,
           billingCycleEndsAt: planContext.billingCycleEndsAt,
         },
-    projects: {
-      total: projectTotal,
-      active: projectStatusMap[ProjectStatus.ACTIVE] ?? 0,
-      completed: projectStatusMap[ProjectStatus.COMPLETED] ?? 0,
-      onHold: projectStatusMap[ProjectStatus.ON_HOLD] ?? 0,
-      archived: projectStatusMap[ProjectStatus.ARCHIVED] ?? 0,
-    },
+    projects: projectStats,
     tasks: {
       total: taskTotal,
       todo: taskStatusMap[TaskStatus.TODO] ?? 0,
