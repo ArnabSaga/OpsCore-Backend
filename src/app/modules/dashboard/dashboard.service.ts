@@ -22,6 +22,8 @@ import AppError from "../../errors/AppError";
 import { prisma } from "../../lib/prisma";
 import { resolveWorkspacePlanContext } from "../../utils/checkPlanLimit";
 import { formatMoney } from "../invoice/invoice.utils";
+import { PLAN_ESTIMATED_REVENUE } from "../../config/platformPricing";
+import { mapPriceIdToInterval } from "../billing/billing.utils";
 import {
   IDashboardActivityItem,
   IPlatformDashboardActivityQuery,
@@ -655,7 +657,12 @@ const getMetrics = async (
 
   const projectsMap = generateTimeSeriesBuckets(config, { created: 0, completed: 0 });
   const tasksMap = generateTimeSeriesBuckets(config, { created: 0, completed: 0 });
-  const revenueMap = generateTimeSeriesBuckets(config, { paidAmount: 0, amount: 0, currency: "" });
+  const revenueMap = generateTimeSeriesBuckets(config, {
+    manualInvoiceRevenue: 0,
+    subscriptionEstimate: 0,
+    totalPlatformRevenue: 0,
+    currency: "",
+  });
 
   createdProjects.forEach((p) => {
     const key = formatBucketKey(p.createdAt, unit);
@@ -687,8 +694,8 @@ const getMetrics = async (
     const key = formatBucketKey(i.updatedAt, unit);
     const existing = revenueMap.get(key);
     if (existing) {
-      existing.paidAmount += Number(i.amount);
-      existing.amount = existing.paidAmount;
+      existing.manualInvoiceRevenue += Number(i.amount);
+      existing.totalPlatformRevenue = existing.manualInvoiceRevenue + existing.subscriptionEstimate;
       existing.currency = i.currency;
     }
   });
@@ -721,6 +728,7 @@ const getPlatformOverview = async (
     paidInvoicesCount,
     overdueInvoices,
     totalPaidAmountRows,
+    activeSubscriptions,
   ] = await Promise.all([
     prisma.workspace.count({ where: { deletedAt: null } }),
     prisma.workspace.count({
@@ -746,7 +754,21 @@ const getPlatformOverview = async (
       where: { deletedAt: null, status: InvoiceStatus.PAID },
       _sum: { amount: true },
     }),
+    prisma.subscription.findMany({
+      where: { status: "ACTIVE" },
+      select: { plan: true, stripePriceId: true },
+    }),
   ]);
+
+  const manualInvoiceRevenue = Number(totalPaidAmountRows._sum.amount || 0);
+
+  let subscriptionRevenueEstimate = 0;
+  activeSubscriptions.forEach((sub) => {
+    const interval = mapPriceIdToInterval(sub.stripePriceId);
+    const planPricing = PLAN_ESTIMATED_REVENUE[sub.plan as keyof typeof PLAN_ESTIMATED_REVENUE];
+    const amount = interval === "year" ? planPricing.year / 12 : planPricing.month;
+    subscriptionRevenueEstimate += amount;
+  });
 
   return {
     scope: "platform",
@@ -769,7 +791,9 @@ const getPlatformOverview = async (
       total: totalInvoices,
       paid: paidInvoicesCount,
       overdue: overdueInvoices,
-      totalPaidAmount: Number(totalPaidAmountRows._sum.amount || 0),
+      manualInvoiceRevenue,
+      subscriptionRevenueEstimate: Math.round(subscriptionRevenueEstimate),
+      totalPlatformRevenue: Math.round(manualInvoiceRevenue + subscriptionRevenueEstimate),
     },
   };
 };
@@ -835,7 +859,7 @@ const getPlatformMetrics = async (
   const config = getAggregationConfig(query.period || "last_30_days");
   const { startDate, endDate, unit } = config;
 
-  const [createdWorkspaces, createdUsers, createdSubscriptions, createdInvoices, paidInvoices] =
+  const [createdWorkspaces, createdUsers, createdSubscriptions, createdInvoices, paidInvoices, activeSubscriptionsList] =
     await Promise.all([
       prisma.workspace.findMany({
         where: { createdAt: { gte: startDate, lte: endDate } },
@@ -860,6 +884,13 @@ const getPlatformMetrics = async (
         },
         select: { updatedAt: true, amount: true, currency: true },
       }),
+      prisma.subscription.findMany({
+        where: {
+          createdAt: { lte: endDate },
+          OR: [{ canceledAt: null }, { canceledAt: { gt: startDate } }],
+        },
+        select: { plan: true, stripePriceId: true, createdAt: true, canceledAt: true },
+      }),
     ]);
 
   const workspacesMap = generateTimeSeriesBuckets(config, { created: 0, completed: 0 });
@@ -867,8 +898,9 @@ const getPlatformMetrics = async (
   const subscriptionsMap = generateTimeSeriesBuckets(config, { trials: 0, paid: 0, canceled: 0 });
   const invoicesMap = generateTimeSeriesBuckets(config, { created: 0, paid: 0 });
   const revenueMap = generateTimeSeriesBuckets(config, {
-    paidAmount: 0,
-    amount: 0,
+    manualInvoiceRevenue: 0,
+    subscriptionEstimate: 0,
+    totalPlatformRevenue: 0,
     currency: "USD",
   });
 
@@ -906,10 +938,38 @@ const getPlatformMetrics = async (
     const key = formatBucketKey(i.updatedAt, unit);
     const existing = revenueMap.get(key);
     if (existing) {
-      existing.paidAmount += Number(i.amount);
-      existing.amount = existing.paidAmount;
-      existing.currency = i.currency;
+      existing.manualInvoiceRevenue += Number(i.amount);
     }
+  });
+
+  // Calculate subscription estimates per bucket
+  revenueMap.forEach((bucket) => {
+    const bStart = new Date(bucket.bucketStart);
+    const bEnd = new Date(bucket.bucketEnd);
+
+    activeSubscriptionsList.forEach((sub) => {
+      const isSubActiveInBucket =
+        new Date(sub.createdAt) <= bEnd && (!sub.canceledAt || new Date(sub.canceledAt) > bStart);
+
+      if (isSubActiveInBucket) {
+        const interval = mapPriceIdToInterval(sub.stripePriceId);
+        const planPricing = PLAN_ESTIMATED_REVENUE[sub.plan as keyof typeof PLAN_ESTIMATED_REVENUE];
+        
+        let bucketRevenue = 0;
+        if (interval === "year") {
+          // Approximate monthly revenue for trend
+          bucketRevenue = planPricing.year / 12;
+        } else {
+          bucketRevenue = planPricing.month;
+        }
+
+        // Adjust for bucket width if not month-to-month
+        // For simplicity in a dashboard trend, we show the MRR value
+        bucket.subscriptionEstimate += Math.round(bucketRevenue);
+      }
+    });
+
+    bucket.totalPlatformRevenue = bucket.manualInvoiceRevenue + bucket.subscriptionEstimate;
   });
 
   return {

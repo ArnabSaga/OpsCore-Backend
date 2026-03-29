@@ -62,11 +62,14 @@ export const getStripePriceIdForPlan = (
   };
 
   const priceId = mapping[plan][billingInterval];
+  const isPlaceholder = priceId?.includes("placeholder");
 
-  if (!priceId) {
+  if (!priceId || isPlaceholder) {
     throw new AppError(
       status.INTERNAL_SERVER_ERROR,
-      `Stripe price is not configured for ${plan} (${billingInterval})`
+      `Stripe price ID for ${plan} (${billingInterval}) is ${
+        isPlaceholder ? "still using a placeholder value" : "not configured"
+      }. Please update your backend .env file.`
     );
   }
 
@@ -117,6 +120,17 @@ export const mapPriceIdToPlan = (priceId?: string | null): SubscriptionPlan => {
   }
 
   return SubscriptionPlan.FREE;
+};
+
+export const mapPriceIdToInterval = (priceId?: string | null): BillingInterval => {
+  if (!priceId) return "month";
+
+  const yearlyPriceIds = [
+    envVars.STRIPE.STRIPE_PRICE_PRO_YEARLY,
+    envVars.STRIPE.STRIPE_PRICE_ENTERPRISE_YEARLY,
+  ].filter(Boolean);
+
+  return yearlyPriceIds.includes(priceId) ? "year" : "month";
 };
 
 export const centsToMoneyString = (amount?: number | null) => {

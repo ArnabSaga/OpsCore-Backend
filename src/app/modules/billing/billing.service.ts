@@ -10,6 +10,7 @@ import {
   getCurrentPlanUsage,
   getPlanLimit,
 } from "../../utils/checkPlanLimit";
+import { PLAN_FEATURES, PlanFeatureKey } from "../../config/planFeatures";
 import {
   IBillingHistoryResponse,
   ICreateCustomerPortalPayload,
@@ -26,6 +27,44 @@ import {
   normalizeBillingInterval,
   unixToDate,
 } from "./billing.utils";
+
+const FEATURE_LABELS: Record<string, string> = {
+  "workspace.multiWorkspace": "Multiple Workspaces",
+  "workspace.customBranding": "Custom Branding",
+  "workspace.advancedPermissions": "Advanced Permissions",
+  "workspace.memberManagement": "Member Management",
+  "projects.create": "Project Creation",
+  "projects.archive": "Project Archiving",
+  "projects.assignMembers": "Resource Assignment",
+  "tasks.create": "Task Management",
+  "tasks.comments": "Task Discussions",
+  "tasks.attachments": "Task Attachments",
+  "tasks.advancedFilters": "Advanced Search/Filter",
+  "invoices.create": "Invoice Creation",
+  "invoices.send": "Invoice Sending",
+  "billing.customerPortal": "Self-Service Billing",
+  "billing.checkout": "Stripe Integration",
+  "dashboard.overview": "Dashboard Overview",
+  "dashboard.activity": "Recent Activity Feed",
+  "analytics.projects": "Project Analytics",
+  "analytics.revenue": "Revenue Insights",
+  "activityLogs.read": "Access Logs",
+  "activityLogs.export": "Export Logs",
+  "automation.basic": "Basic Automation",
+  "automation.advanced": "Full Automation Suite",
+  "notifications.email": "Email Notifications",
+  "api.webhooks": "Webhook Support",
+  "support.priority": "Priority Support",
+};
+
+const prettifyFeatureKey = (key: string): string => {
+  return key
+    .split(".")
+    .pop()!
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (str) => str.toUpperCase())
+    .trim();
+};
 
 const getWorkspaceOrThrow = async (workspaceId: string) => {
   const workspace = await prisma.workspace.findFirst({
@@ -148,10 +187,13 @@ const getCurrentWorkspaceSubscription = async (
         billingCycleStartsAt: planContext.billingCycleStartsAt,
         billingCycleEndsAt: planContext.billingCycleEndsAt,
       },
-      capabilities: {
-        canCheckout: true,
-        canOpenCustomerPortal: Boolean(workspace.stripeCustomerId),
-      },
+      capabilities: Object.entries(PLAN_FEATURES[planContext.effectivePlan].flags).map(
+        ([key, enabled]) => ({
+          key,
+          label: FEATURE_LABELS[key] || prettifyFeatureKey(key),
+          enabled,
+        })
+      ),
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -243,9 +285,12 @@ const prepareCheckoutFlow = async (req: Request): Promise<IPreparedCheckoutRespo
       mode: "subscription",
       expiresAt: unixToDate(checkoutSession.expires_at),
     };
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof AppError) throw error;
-    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to prepare checkout flow");
+    throw new AppError(
+      status.INTERNAL_SERVER_ERROR,
+      `Failed to prepare checkout flow: ${error?.message || "Unknown error"}`
+    );
   }
 };
 
@@ -286,12 +331,9 @@ const getBillingHistory = async (req: Request): Promise<IBillingHistoryResponse>
 
     if (!workspace.stripeCustomerId) {
       return {
-        items: [],
-        meta: {
-          limit: query.limit ?? 20,
-          hasMore: false,
-          nextCursor: null,
-        },
+        invoices: [],
+        hasMore: false,
+        nextCursor: null,
       };
     }
 
@@ -305,26 +347,30 @@ const getBillingHistory = async (req: Request): Promise<IBillingHistoryResponse>
     });
 
     return {
-      items: invoiceList.data.map((invoice) => ({
+      invoices: invoiceList.data.map((invoice) => ({
         id: invoice.id,
-        number: invoice.number,
-        status: invoice.status,
-        currency: invoice.currency?.toUpperCase() ?? null,
-        total: centsToMoneyString(invoice.total),
-        subtotal: centsToMoneyString(invoice.subtotal),
-        amountPaid: centsToMoneyString(invoice.amount_paid),
-        amountDue: centsToMoneyString(invoice.amount_due),
+        stripeInvoiceId: invoice.id,
+        invoiceNumber: invoice.number,
+        status: invoice.status || "open",
+        currency: invoice.currency?.toUpperCase() ?? "USD",
+        subtotalAmount: centsToMoneyString(invoice.subtotal) ?? "0.00",
+        taxAmount: centsToMoneyString((invoice as any).tax || 0) ?? "0.00",
+        totalAmount: centsToMoneyString(invoice.total) ?? "0.00",
+        amountPaid: centsToMoneyString(invoice.amount_paid) ?? "0.00",
+        amountDue: centsToMoneyString(invoice.amount_due) ?? "0.00",
         hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
-        invoicePdf: invoice.invoice_pdf ?? null,
-        periodStart: unixToDate(invoice.period_start),
-        periodEnd: unixToDate(invoice.period_end),
-        createdAt: unixToDate(invoice.created),
+        invoicePdfUrl: invoice.invoice_pdf ?? null,
+        periodStart: unixToDate(invoice.period_start)?.toISOString() ?? null,
+        periodEnd: unixToDate(invoice.period_end)?.toISOString() ?? null,
+        issuedAt: unixToDate(invoice.created)?.toISOString() ?? null,
+        dueAt: invoice.due_date ? unixToDate(invoice.due_date)?.toISOString() ?? null : null,
+        paidAt: invoice.status_transitions?.paid_at
+          ? unixToDate(invoice.status_transitions.paid_at)?.toISOString() ?? null
+          : null,
+        createdAt: unixToDate(invoice.created)?.toISOString() ?? new Date().toISOString(),
       })),
-      meta: {
-        limit,
-        hasMore: invoiceList.has_more,
-        nextCursor: invoiceList.data.at(-1)?.id ?? null,
-      },
+      hasMore: invoiceList.has_more,
+      nextCursor: invoiceList.data.at(-1)?.id ?? null,
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -352,10 +398,21 @@ const getUsage = async (req: Request): Promise<IUsageResponse> => {
           getCurrentPlanUsage({ workspaceId, limitKey: resource }),
         ]);
 
+        const METRIC_LABELS: Record<string, string> = {
+          members: "Team Members",
+          projects: "Active Projects",
+          tasks: "Task Items",
+          storageMb: "Storage (MB)",
+          monthlyInvitations: "Monthly Invitations",
+        };
+
         return {
-          resource,
-          used: currentUsage,
+          key: resource,
+          label: METRIC_LABELS[resource] || prettifyFeatureKey(resource),
+          usage: currentUsage,
           limit: planLimit.limit,
+          unlimited: planLimit.limit === null,
+          remaining: planLimit.limit === null ? null : Math.max(0, planLimit.limit - currentUsage),
         };
       })
     );

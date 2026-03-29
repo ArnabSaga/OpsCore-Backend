@@ -99,8 +99,9 @@ export interface ITimeSeriesPoint {
 }
 
 export interface ITimeSeriesRevenueDataPoint extends ITimeSeriesPoint {
-  paidAmount: number;
-  amount: number; // @deprecated: use paidAmount
+  subscriptionEstimate: number;
+  manualInvoiceRevenue: number;
+  totalPlatformRevenue: number;
   currency: string;
 }
 
@@ -139,7 +140,9 @@ export interface IPlatformDashboardOverviewResponse {
     total: number;
     paid: number;
     overdue: number;
-    totalPaidAmount: number;
+    manualInvoiceRevenue: number;
+    subscriptionRevenueEstimate: number;
+    totalPlatformRevenue: number;
   };
 }
 

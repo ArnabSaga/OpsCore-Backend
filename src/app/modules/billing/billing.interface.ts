@@ -27,6 +27,12 @@ export interface IResolvedPlanSummary {
   billingCycleEndsAt: Date;
 }
 
+export interface IBillingCapability {
+  key: string;
+  label: string;
+  enabled: boolean;
+}
+
 export interface ICurrentWorkspaceSubscriptionResponse {
   workspace: {
     id: string;
@@ -47,10 +53,7 @@ export interface ICurrentWorkspaceSubscriptionResponse {
     updatedAt: Date | null;
   };
   planSummary: IResolvedPlanSummary;
-  capabilities: {
-    canCheckout: boolean;
-    canOpenCustomerPortal: boolean;
-  };
+  capabilities: IBillingCapability[];
 }
 
 export interface IPreparedCheckoutResponse {
@@ -66,27 +69,29 @@ export interface IPreparedCheckoutResponse {
 
 export interface IBillingHistoryItem {
   id: string;
-  number: string | null;
-  status: string | null;
-  currency: string | null;
-  total: string | null;
-  subtotal: string | null;
-  amountPaid: string | null;
-  amountDue: string | null;
+  stripeInvoiceId: string | null;
+  invoiceNumber: string | null;
+  status: string;
+  currency: string;
+  subtotalAmount: string;
+  taxAmount: string;
+  totalAmount: string;
+  amountPaid: string;
+  amountDue: string;
   hostedInvoiceUrl: string | null;
-  invoicePdf: string | null;
-  periodStart: Date | null;
-  periodEnd: Date | null;
-  createdAt: Date | null;
+  invoicePdfUrl: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  issuedAt: string | null;
+  dueAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
 }
 
 export interface IBillingHistoryResponse {
-  items: IBillingHistoryItem[];
-  meta: {
-    limit: number;
-    hasMore: boolean;
-    nextCursor: string | null;
-  };
+  invoices: IBillingHistoryItem[];
+  hasMore: boolean;
+  nextCursor: string | null;
 }
 
 export interface ICustomerPortalResponse {
@@ -94,9 +99,12 @@ export interface ICustomerPortalResponse {
 }
 
 export interface IUsageMetric {
-  resource: PlanLimitKey;
-  used: number;
+  key: string;
+  label: string;
+  usage: number;
   limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
 }
 
 export interface IUsageResponse {
