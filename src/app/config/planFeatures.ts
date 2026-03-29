@@ -167,7 +167,7 @@ export const PLAN_FEATURES: Record<WorkspacePlan, PlanPolicy> = {
       "dashboard.activity": true,
 
       "analytics.projects": true,
-      "analytics.revenue": false,
+      "analytics.revenue": true,
 
       "activityLogs.read": true,
       "activityLogs.export": false,
