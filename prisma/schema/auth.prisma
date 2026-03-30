@@ -30,6 +30,8 @@ model User {
   projectMembers  ProjectMember[]
   taskComments    TaskComment[]
   taskAttachments TaskAttachment[] @relation("TaskAttachmentUploadedBy")
+  notifications        Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@map("users")
 }

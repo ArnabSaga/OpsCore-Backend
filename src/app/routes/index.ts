@@ -16,6 +16,7 @@ import { TaskRoutes } from "../modules/task/task.route";
 import { UserRoutes } from "../modules/user/user.route";
 import { WorkspaceRoutes } from "../modules/workspace/workspace.route";
 import { WorkspaceMemberRoutes } from "../modules/workspaceMember/workspaceMember.route";
+import { NotificationRoutes } from "../modules/notification/notification.route";
 
 type TModuleRoutes = {
   path: string;
@@ -45,6 +46,7 @@ const moduleRoutes: TModuleRoutes[] = [
   { path: "/activity-logs", route: ActivityLogRoutes },
   { path: "/analytics", route: AnalyticsRoutes },
   { path: "/health", route: HealthRoutes },
+  { path: "/notifications", route: NotificationRoutes },
 
   // Billing
   { path: "/billing", route: BillingRoutes },

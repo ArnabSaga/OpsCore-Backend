@@ -1,0 +1,62 @@
+model Notification {
+  id              String   @id @default(uuid(7))
+  workspaceId      String
+  userId          String
+  type            String
+  title           String
+  message         String
+  status          String   @default("UNREAD")
+  channel         String   @default("IN_APP")
+  entityType      String?
+  entityId        String?
+  actionUrl       String?
+  metadata        Json?
+  readAt          DateTime?
+  archivedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId, deletedAt, createdAt])
+  @@index([workspaceId, userId, status, deletedAt, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([deletedAt])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id                   String   @id @default(uuid(7))
+  workspaceId           String
+  userId               String
+
+  inAppEnabled         Boolean  @default(true)
+  emailEnabled         Boolean  @default(false)
+
+  taskAssigned         Boolean  @default(true)
+  taskStatusChanged    Boolean  @default(true)
+  taskCommentAdded     Boolean  @default(true)
+  taskDueSoon          Boolean  @default(true)
+  taskOverdue          Boolean  @default(true)
+
+  invitationReceived   Boolean  @default(true)
+  invitationAccepted   Boolean  @default(true)
+
+  invoiceSent          Boolean  @default(true)
+  invoicePaid          Boolean  @default(true)
+  invoiceOverdue       Boolean  @default(true)
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@map("notification_preferences")
+}
