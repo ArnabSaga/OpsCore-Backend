@@ -4,8 +4,8 @@
   "description": "A platform where different businesses can sign up, create their own private workspace, invite team members, manage products, customers, orders, analytics, and business automation — all inside one shared SaaS platform with strict tenant data isolation.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "build": "tsc",
+    "start": "node dist/server.js",
+    "build": "tsup",
     "dev": "tsx watch src/server.ts",
     "migrate": "prisma migrate dev",
     "generate": "prisma generate",
@@ -47,6 +47,7 @@
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "stripe": "^20.4.1",
+    "tsup": "^8.5.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {

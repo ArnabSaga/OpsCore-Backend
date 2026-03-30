@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { emailOTP } from "better-auth/plugins";
+import { emailOTP, oAuthProxy } from "better-auth/plugins";
 import { SystemRole } from "../../generated/prisma/enums";
 import { envVars } from "../config/env";
 import { sendEmail } from "../utils/email";
@@ -30,6 +30,8 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+  
+  baseURL: envVars.FRONTEND_URL,
   trustedOrigins: [envVars.FRONTEND_URL],
 
   emailAndPassword: {
@@ -83,6 +85,7 @@ export const auth = betterAuth({
   },
 
   plugins: [
+    oAuthProxy(),
     emailOTP({
       overrideDefaultEmailVerification: true,
 
@@ -139,5 +142,25 @@ export const auth = betterAuth({
 
   advanced: {
     useSecureCookies: envVars.NODE_ENV === "production",
+    cookies: {
+      session_token: {
+        name: "session_token",
+        attributes: {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+          partitioned: true,
+        },
+      },
+      state: {
+        name: "session_token",
+        attributes: {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+          partitioned: true,
+        },
+      },
+    },
   },
 });
