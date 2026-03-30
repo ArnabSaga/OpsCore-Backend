@@ -27,13 +27,20 @@ const getNotificationsFromDB = async (
   const sortBy = query.sortBy || "createdAt";
   const sortOrder = query.sortOrder || "desc";
 
-  const where: any = {
+  const where: Prisma.NotificationWhereInput = {
     workspaceId,
     userId,
     deletedAt: null,
   };
 
-  if (query.status) where.status = query.status;
+  // Default: Exclude Archived unless explicitly requested
+  if (query.status) {
+    where.status = query.status;
+  } else {
+    where.status = { not: NotificationStatus.ARCHIVED };
+    where.archivedAt = null;
+  }
+
   if (query.type) where.type = query.type;
   if (query.channel) where.channel = query.channel;
   if (query.entityType) where.entityType = query.entityType;
@@ -165,12 +172,17 @@ const markAllNotificationsAsReadIntoDB = async (
   userId: string,
   payload: IMarkAllAsReadPayload
 ) => {
-  const where: any = {
+  const where: Prisma.NotificationWhereInput = {
     workspaceId,
     userId,
-    status: NotificationStatus.UNREAD,
     deletedAt: null,
   };
+
+  // Honor onlyUnread (default true)
+  const onlyUnread = payload.onlyUnread !== false;
+  if (onlyUnread) {
+    where.status = NotificationStatus.UNREAD;
+  }
 
   if (payload.type) where.type = payload.type;
   if (payload.entityType) where.entityType = payload.entityType;
@@ -277,6 +289,13 @@ const createNotification = async (
     metadata?: Record<string, unknown>;
   }
 ) => {
+  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId);
+
+  // Channel-aware preference guard
+  const channel = data.channel || NotificationChannel.IN_APP;
+  if (channel === NotificationChannel.IN_APP && !preferences.inAppEnabled) return null;
+  if (channel === NotificationChannel.EMAIL && !preferences.emailEnabled) return null;
+
   const actionUrl = generateActionUrl(data.entityType, data.entityId, data.workspaceId);
 
   return await tx.notification.create({
@@ -299,7 +318,7 @@ const createNotification = async (
  * Domain-specific helper for Task Assignment
  */
 const createTaskAssignedNotification = async (
-  tx: any,
+  tx: Prisma.TransactionClient,
   data: {
     workspaceId: string;
     userId: string;
@@ -330,7 +349,7 @@ const createTaskAssignedNotification = async (
  * Domain-specific helper for Invitation Received
  */
 const createInvitationNotification = async (
-  tx: any,
+  tx: Prisma.TransactionClient,
   data: {
     workspaceId: string;
     userId: string;
@@ -360,7 +379,7 @@ const createInvitationNotification = async (
  * Domain-specific helper for Invoice Overdue
  */
 const createInvoiceNotification = async (
-  tx: any,
+  tx: Prisma.TransactionClient,
   data: {
     workspaceId: string;
     userId: string;

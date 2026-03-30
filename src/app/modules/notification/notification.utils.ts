@@ -9,15 +9,15 @@ export const generateActionUrl = (
 
   switch (entityType) {
     case NotificationEntityType.TASK:
-      return `/workspaces/${workspaceId}/tasks/${entityId}`;
+      return `/dashboard/workspaces/${workspaceId}/tasks/${entityId}`;
     case NotificationEntityType.PROJECT:
-      return `/workspaces/${workspaceId}/projects/${entityId}`;
+      return `/dashboard/workspaces/${workspaceId}/projects/${entityId}`;
     case NotificationEntityType.INVOICE:
-      return `/workspaces/${workspaceId}/invoices/${entityId}`;
+      return `/dashboard/workspaces/${workspaceId}/invoices/${entityId}`;
     case NotificationEntityType.INVITATION:
-      return `/workspaces/${workspaceId}`;
+      return `/dashboard/workspaces/${workspaceId}`;
     case NotificationEntityType.WORKSPACE:
-      return `/workspaces/${workspaceId}`;
+      return `/dashboard/workspaces/${workspaceId}`;
     case NotificationEntityType.SYSTEM:
       return "/dashboard";
     default:
