@@ -39,7 +39,31 @@ const getActivityLog = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getPlatformLogs = catchAsync(async (req: Request, res: Response) => {
+  const query = pick(req.query as Record<string, unknown>, [
+    "page",
+    "limit",
+    "action",
+    "entityType",
+    "userId",
+    "from",
+    "to",
+  ]) as IActivityLogQuery;
+
+  const result = await ActivityLogService.getPlatformLogs(query);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Platform activity logs fetched successfully",
+    data: result, // result already contains { items, meta }
+  });
+});
+
+
 export const ActivityLogController = {
   getActivityLogs,
   getActivityLog,
+  getPlatformLogs,
 };
+

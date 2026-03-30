@@ -113,7 +113,17 @@ const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         message: message,
       },
     ];
+  } else if (err instanceof AppError) {
+    statusCode = err.statusCode;
+    message = err.message;
+    errorSources = [
+      {
+        path: "",
+        message: err.message,
+      },
+    ];
   } else if (err instanceof Error) {
+
     message = err.message;
     errorSources = [
       {

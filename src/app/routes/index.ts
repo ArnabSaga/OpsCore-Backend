@@ -17,6 +17,9 @@ import { UserRoutes } from "../modules/user/user.route";
 import { WorkspaceRoutes } from "../modules/workspace/workspace.route";
 import { WorkspaceMemberRoutes } from "../modules/workspaceMember/workspaceMember.route";
 import { NotificationRoutes } from "../modules/notification/notification.route";
+import { PlatformSubscriptionRoutes } from "../modules/billing/platform-subscription.route";
+import { PlatformActivityLogRoutes } from "../modules/activityLog/platform-activity-log.route";
+
 
 type TModuleRoutes = {
   path: string;
@@ -32,6 +35,9 @@ const moduleRoutes: TModuleRoutes[] = [
 
   // Platform Oversight
   { path: "/platform/invoices", route: PlatformInvoiceRoutes },
+  { path: "/platform/subscriptions", route: PlatformSubscriptionRoutes },
+  { path: "/platform/logs", route: PlatformActivityLogRoutes },
+
 
   // Workspace
   { path: "/workspaces", route: WorkspaceRoutes },

@@ -7,7 +7,9 @@ import {
   IActivityLogItem,
   IActivityLogListResponse,
   IActivityLogQuery,
+  IPlatformActivityLogListResponse,
 } from "./activityLog.interface";
+
 
 const sanitizeMetadata = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -212,7 +214,88 @@ const getActivityLog = async (req: Request): Promise<IActivityLogItem> => {
   return mapActivityLog(row);
 };
 
+const getPlatformLogs = async (
+  query: IActivityLogQuery
+): Promise<IPlatformActivityLogListResponse> => {
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.ActivityLogWhereInput = {};
+
+  if (query.action) {
+    where.action = { contains: query.action, mode: "insensitive" };
+  }
+
+  if (query.entityType) {
+    where.entityType = { contains: query.entityType, mode: "insensitive" };
+  }
+
+  if (query.userId) {
+    where.userId = query.userId;
+  }
+
+  if (query.from || query.to) {
+    where.createdAt = {
+      ...(query.from ? { gte: query.from } : {}),
+      ...(query.to ? { lte: query.to } : {}),
+    };
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.activityLog.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: {
+        createdAt: "desc",
+      },
+      select: {
+        id: true,
+        workspaceId: true,
+        userId: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        metadata: true,
+        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
+        workspace: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    }),
+    prisma.activityLog.count({ where }),
+  ]);
+
+  return {
+    items: rows.map((row) => ({
+      ...mapActivityLog(row),
+      workspace: row.workspace,
+    })),
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  };
+};
+
+
 export const ActivityLogService = {
   getActivityLogs,
   getActivityLog,
+  getPlatformLogs,
 };
+

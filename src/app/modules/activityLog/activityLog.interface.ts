@@ -36,3 +36,22 @@ export interface IActivityLogListResponse {
     totalPages: number;
   };
 }
+
+export interface IPlatformActivityLogItem extends IActivityLogItem {
+  workspace: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+export interface IPlatformActivityLogListResponse {
+  items: IPlatformActivityLogItem[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+

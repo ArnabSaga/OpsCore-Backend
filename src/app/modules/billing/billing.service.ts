@@ -16,16 +16,20 @@ import {
   ICreateCustomerPortalPayload,
   ICurrentWorkspaceSubscriptionResponse,
   IGetBillingHistoryQuery,
+  IPlatformSubscriptionsResponse,
   IPrepareCheckoutPayload,
   IPreparedCheckoutResponse,
   IUsageResponse,
 } from "./billing.interface";
+import { Prisma } from "../../../generated/prisma/client";
 import {
   centsToMoneyString,
   getStripeClient,
+  mapPriceIdToInterval,
   getStripePriceIdForPlan,
   normalizeBillingInterval,
   unixToDate,
+
 } from "./billing.utils";
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -424,10 +428,84 @@ const getUsage = async (req: Request): Promise<IUsageResponse> => {
   }
 };
 
+const getPlatformSubscriptions = async (
+  query: any
+): Promise<IPlatformSubscriptionsResponse> => {
+  const page = Math.max(Number(query.page) || 1, 1);
+  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.SubscriptionWhereInput = {};
+
+  if (query.status) {
+    where.status = query.status as SubscriptionStatus;
+  }
+
+  if (query.plan) {
+    where.plan = query.plan as SubscriptionPlan;
+  }
+
+  if (query.search) {
+    where.workspace = {
+      OR: [
+        { name: { contains: query.search, mode: "insensitive" } },
+        { slug: { contains: query.search, mode: "insensitive" } },
+        { createdByUser: { email: { contains: query.search, mode: "insensitive" } } },
+      ],
+    };
+  }
+
+  const [rows, total] = await Promise.all([
+    prisma.subscription.findMany({
+      where,
+      skip,
+      take: limit,
+      include: {
+        workspace: {
+          include: {
+            createdByUser: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    prisma.subscription.count({ where }),
+  ]);
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspaceId,
+      workspace: {
+        id: row.workspace.id,
+        name: row.workspace.name,
+        slug: row.workspace.slug,
+        ownerEmail: row.workspace.createdByUser?.email || "N/A",
+      },
+      plan: row.plan as SubscriptionPlan,
+      status: row.status as SubscriptionStatus,
+      billingInterval: mapPriceIdToInterval(row.stripePriceId),
+      currentPeriodEnd: row.currentPeriodEnd,
+      createdAt: row.createdAt,
+    })),
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit) || 1,
+    },
+  };
+};
+
+
 export const BillingService = {
   getCurrentWorkspaceSubscription,
   prepareCheckoutFlow,
   createCustomerPortal,
   getBillingHistory,
   getUsage,
+  getPlatformSubscriptions,
 };
+

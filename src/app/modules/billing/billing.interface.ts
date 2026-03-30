@@ -110,3 +110,31 @@ export interface IUsageMetric {
 export interface IUsageResponse {
   metrics: IUsageMetric[];
 }
+
+export interface IPlatformSubscriptionItem {
+  id: string;
+  workspaceId: string;
+  workspace: {
+    id: string;
+    name: string;
+    slug: string;
+    ownerEmail: string;
+  };
+  plan: SubscriptionPlan;
+  status: SubscriptionStatus | "TRIALING" | "NONE";
+  billingInterval: "month" | "year" | null;
+  currentPeriodEnd: Date | null;
+  createdAt: Date;
+}
+
+export interface IPlatformSubscriptionsResponse {
+  items: IPlatformSubscriptionItem[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+

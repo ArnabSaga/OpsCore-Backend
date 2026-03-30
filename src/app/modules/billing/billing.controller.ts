@@ -59,10 +59,24 @@ const getUsage = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const getPlatformSubscriptions = catchAsync(async (req: Request, res: Response) => {
+  const result = await BillingService.getPlatformSubscriptions(req.query);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Platform subscriptions fetched successfully",
+    data: result,
+  });
+});
+
+
 export const BillingController = {
   getCurrentWorkspaceSubscription,
   prepareCheckoutFlow,
   createCustomerPortal,
   getBillingHistory,
   getUsage,
+  getPlatformSubscriptions,
 };
+
