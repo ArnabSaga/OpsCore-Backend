@@ -2,7 +2,8 @@
   "name": "opscore",
   "version": "1.0.0",
   "description": "A platform where different businesses can sign up, create their own private workspace, invite team members, manage products, customers, orders, analytics, and business automation — all inside one shared SaaS platform with strict tenant data isolation.",
-  "main": "server.js",
+  "type": "module",
+  "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
     "build": "tsup",
