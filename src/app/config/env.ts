@@ -42,6 +42,8 @@ interface EnvConfig {
   SUPER_ADMIN_PASSWORD: string;
 }
 
+const normalizeUrl = (url: string) => url.endsWith("/") ? url.slice(0, -1) : url;
+
 const loadEnvVariables = (): EnvConfig => {
   const requiredEnvVars = [
     "NODE_ENV",
@@ -90,8 +92,8 @@ const loadEnvVariables = (): EnvConfig => {
     DATABASE_URL: process.env.DATABASE_URL as string,
     // SHADOW_DATABASE_URL: process.env.SHADOW_DATABASE_URL as string,
     BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET as string,
-    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL as string,
-    FRONTEND_URL: process.env.FRONTEND_URL as string,
+    BETTER_AUTH_URL: normalizeUrl(process.env.BETTER_AUTH_URL as string),
+    FRONTEND_URL: normalizeUrl(process.env.FRONTEND_URL as string),
     EMAIL_SENDER: {
       SMTP_HOST: process.env.EMAIL_SENDER_SMTP_HOST as string,
       SMTP_PORT: process.env.EMAIL_SENDER_SMTP_PORT as string,

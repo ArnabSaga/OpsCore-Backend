@@ -23,11 +23,15 @@ app.post("/api/v1/webhooks/stripe", express.raw({ type: "application/json" }), s
 app.use(express.json());
 app.use(
   cors({
-    origin: [envVars.FRONTEND_URL, envVars.BETTER_AUTH_URL],
+    origin: [
+      envVars.FRONTEND_URL,
+      envVars.BETTER_AUTH_URL,
+      "https://opscore-frontend-arnabsagas-projects.vercel.app",
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-workspace-id"],
-    exposedHeaders: ["Content-Type"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-workspace-id", "Cookie"],
+    exposedHeaders: ["Content-Type", "Set-Cookie"],
   })
 );
 app.use("/api/auth", toNodeHandler(auth));
