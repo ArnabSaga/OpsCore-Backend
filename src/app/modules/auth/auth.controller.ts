@@ -170,6 +170,38 @@ const switchWorkspace = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const handleRegisterGet = catchAsync(async (_req: Request, res: Response) => {
+  const frontendUrl = envVars.FRONTEND_URL;
+
+  if (!frontendUrl) {
+    return sendResponse(res, {
+      statusCode: status.INTERNAL_SERVER_ERROR,
+      success: false,
+      message: "Frontend URL is not configured. Please contact support.",
+    });
+  }
+
+  const normalizedUrl = frontendUrl.endsWith("/") ? frontendUrl.slice(0, -1) : frontendUrl;
+
+  res.redirect(status.FOUND, `${normalizedUrl}/register`);
+});
+
+const handleLoginGet = catchAsync(async (_req: Request, res: Response) => {
+  const frontendUrl = envVars.FRONTEND_URL;
+
+  if (!frontendUrl) {
+    return sendResponse(res, {
+      statusCode: status.INTERNAL_SERVER_ERROR,
+      success: false,
+      message: "Frontend URL is not configured. Please contact support.",
+    });
+  }
+
+  const normalizedUrl = frontendUrl.endsWith("/") ? frontendUrl.slice(0, -1) : frontendUrl;
+
+  res.redirect(status.FOUND, `${normalizedUrl}/login`);
+});
+
 export const AuthController = {
   register,
   login,
@@ -184,4 +216,6 @@ export const AuthController = {
   googleLoginSuccess,
   handleOAuthError,
   switchWorkspace,
+  handleRegisterGet,
+  handleLoginGet,
 };

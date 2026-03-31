@@ -31,8 +31,12 @@ export const auth = betterAuth({
     provider: "postgresql",
   }),
 
-  baseURL: envVars.FRONTEND_URL,
-  trustedOrigins: [envVars.FRONTEND_URL],
+  baseURL: envVars.BETTER_AUTH_URL,
+  trustedOrigins: [
+    envVars.FRONTEND_URL,
+    "https://opscore-frontend.vercel.app",
+    "https://opscore-frontend-arnabsagas-projects.vercel.app",
+  ],
 
   emailAndPassword: {
     enabled: true,

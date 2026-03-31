@@ -13,8 +13,10 @@ router.get("/google/success", AuthController.googleLoginSuccess);
 router.get("/oauth/error", AuthController.handleOAuthError);
 
 router.post("/register", validateRequest(AuthValidation.registerSchema), AuthController.register);
+router.get("/register", AuthController.handleRegisterGet);
 
 router.post("/login", validateRequest(AuthValidation.loginSchema), AuthController.login);
+router.get("/login", AuthController.handleLoginGet);
 
 router.post("/logout", requireAuth, AuthController.logout);
 
