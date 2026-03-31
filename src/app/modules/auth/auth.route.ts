@@ -3,6 +3,9 @@ import { requireAuth } from "../../middlewares/requireAuth";
 import validateRequest from "../../middlewares/validateRequest";
 import { AuthController } from "./auth.controller";
 import { AuthValidation } from "./auth.validation";
+import { UserController } from "../user/user.controller";
+import { UserValidation } from "../user/user.validation";
+import { uploadProfilePhoto } from "../../uploads/user/uploadProfilePhoto";
 
 const router = Router();
 
@@ -21,6 +24,13 @@ router.get("/login", AuthController.handleLoginGet);
 router.post("/logout", requireAuth, AuthController.logout);
 
 router.get("/me", requireAuth, AuthController.getMe);
+router.patch(
+  "/me",
+  requireAuth,
+  uploadProfilePhoto.single("photo"),
+  validateRequest(UserValidation.updateProfileValidationSchema),
+  UserController.updateProfile
+);
 
 router.post(
   "/forgot-password",

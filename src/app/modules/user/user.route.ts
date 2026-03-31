@@ -8,28 +8,21 @@ import { requireSystemRole } from "../../middlewares/requireSystemRole";
 import { SystemRole } from "../../constants/role";
 
 const router = Router();
+const platformRouter = Router();
 
+// Individual user management (mapped to /users)
 router.use(requireAuth);
-
-router.get("/profile", UserController.getProfile);
-
-router.get(
-  "/platform/all",
-  requireSystemRole(SystemRole.SUPER_ADMIN),
-  UserController.getPlatformUsers
-);
-
-router.patch(
-  "/profile",
-  uploadProfilePhoto.single("photo"),
-  validateRequest(UserValidation.updateProfileValidationSchema),
-  UserController.updateProfile
-);
-
 router.patch(
   "/password",
   validateRequest(UserValidation.updatePasswordValidationSchema),
   UserController.updatePassword
 );
 
+// Platform administration (mapped to /platform/users)
+platformRouter.use(requireAuth);
+platformRouter.use(requireSystemRole(SystemRole.SUPER_ADMIN));
+
+platformRouter.get("/", UserController.getPlatformUsers);
+
 export const UserRoutes = router;
+export const PlatformUserRoutes = platformRouter;

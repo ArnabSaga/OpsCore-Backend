@@ -13,7 +13,7 @@ import { InvoiceRoutes } from "../modules/invoice/invoice.route";
 import { PlatformInvoiceRoutes } from "../modules/invoice/platform-invoice.route";
 import { ProjectRoutes } from "../modules/project/project.route";
 import { TaskRoutes } from "../modules/task/task.route";
-import { UserRoutes } from "../modules/user/user.route";
+import { UserRoutes, PlatformUserRoutes } from "../modules/user/user.route";
 import { WorkspaceRoutes } from "../modules/workspace/workspace.route";
 import { WorkspaceMemberRoutes } from "../modules/workspaceMember/workspaceMember.route";
 import { NotificationRoutes } from "../modules/notification/notification.route";
@@ -31,12 +31,13 @@ const router = Router();
 const moduleRoutes: TModuleRoutes[] = [
   // Core
   { path: "/auth", route: AuthRoutes },
-  { path: "/account", route: UserRoutes },
+  { path: "/users", route: UserRoutes },
 
   // Platform Oversight
   { path: "/platform/invoices", route: PlatformInvoiceRoutes },
   { path: "/platform/subscriptions", route: PlatformSubscriptionRoutes },
   { path: "/platform/logs", route: PlatformActivityLogRoutes },
+  { path: "/platform/users", route: PlatformUserRoutes },
 
 
   // Workspace
