@@ -33,7 +33,7 @@ export const auth = betterAuth({
 
   baseURL: envVars.BETTER_AUTH_URL,
   trustedOrigins: [
-    envVars.FRONTEND_URL,
+    "https://opscore-frontend.vercel.app",
     "https://opscore-frontend-arnabsagas-projects.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
