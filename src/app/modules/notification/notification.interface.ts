@@ -79,6 +79,8 @@ export interface INotificationResponse extends INotification {
 
 export interface INotificationSummaryResponse {
   totalUnread: number;
+  totalArchived: number;
+  totalActive: number; // Unread + Read
   byType: Array<{
     type: string;
     count: number;

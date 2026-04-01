@@ -22,6 +22,7 @@ export interface IActivityLogItem {
   action: string;
   entityType: string;
   entityId: string | null;
+  entityTitle: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: Date;
   user: IActivityLogActor;

@@ -22,6 +22,11 @@ import {
   IProjectTaskQuery,
   IUpdateProjectPayload,
 } from "./project.interface";
+import { auditLog } from "../../utils/auditLog";
+import { AuditLogAction, AuditLogEntityType } from "../../constants/auditLog";
+import { calculateDiff } from "../../utils/diffHelper";
+
+const PROJECT_MEANINGFUL_FIELDS = ["name", "description", "status", "startDate", "endDate"];
 
 const getTaskSelect = {
   id: true,
@@ -211,49 +216,67 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
       await assertPlanFeatureEnabled(workspaceId, "projects.archive");
     }
 
-    const project = await prisma.project.create({
-      data: {
-        workspaceId,
-        createdByUserId,
-        name: payload.name.trim(),
-        description: payload.description?.trim(),
-        clientName: payload.clientName?.trim(),
-        status: payload.status ?? ProjectStatus.ACTIVE,
-        startDate: payload.startDate ? new Date(payload.startDate) : undefined,
-        endDate: payload.endDate ? new Date(payload.endDate) : undefined,
-        ...(payload.status === ProjectStatus.ARCHIVED ? { archivedAt: new Date() } : {}),
-      },
-      include: {
-        createdByUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            image: true,
-          },
+    const project = await prisma.$transaction(async (tx) => {
+      const created = await tx.project.create({
+        data: {
+          workspaceId,
+          createdByUserId,
+          name: payload.name.trim(),
+          description: payload.description?.trim(),
+          clientName: payload.clientName?.trim(),
+          status: payload.status ?? ProjectStatus.ACTIVE,
+          startDate: payload.startDate ? new Date(payload.startDate) : undefined,
+          endDate: payload.endDate ? new Date(payload.endDate) : undefined,
+          ...(payload.status === ProjectStatus.ARCHIVED ? { archivedAt: new Date() } : {}),
         },
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                image: true,
+        include: {
+          createdByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  image: true,
+                },
               },
             },
+            orderBy: { createdAt: "asc" },
           },
-          orderBy: { createdAt: "asc" },
-        },
-        _count: {
-          select: {
-            tasks: {
-              where: { deletedAt: null },
+          _count: {
+            select: {
+              tasks: {
+                where: { deletedAt: null },
+              },
+              members: true,
             },
-            members: true,
           },
         },
-      },
+      });
+
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: createdByUserId,
+        action: AuditLogAction.PROJECT_CREATED,
+        entityType: AuditLogEntityType.PROJECT,
+        entityId: created.id,
+        entityTitle: created.name,
+        metadata: {
+          status: created.status,
+          clientName: created.clientName,
+        },
+      });
+
+      return created;
     });
 
     const planContext = await resolveWorkspacePlanContext(workspaceId);
@@ -394,60 +417,94 @@ const updateProject = async (req: Request): Promise<IProjectResponse> => {
       await assertPlanFeatureEnabled(workspaceId, "projects.archive");
     }
 
-    const project = await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        ...(payload.name !== undefined && { name: payload.name.trim() }),
-        ...(payload.description !== undefined && {
-          description: payload.description === null ? null : payload.description.trim(),
-        }),
-        ...(payload.clientName !== undefined && {
-          clientName: payload.clientName === null ? null : payload.clientName.trim(),
-        }),
-        ...(payload.status !== undefined && { status: payload.status }),
-        ...(payload.startDate !== undefined && {
-          startDate: payload.startDate ? new Date(payload.startDate) : null,
-        }),
-        ...(payload.endDate !== undefined && {
-          endDate: payload.endDate ? new Date(payload.endDate) : null,
-        }),
-        ...(shouldArchive && { archivedAt: new Date(), status: ProjectStatus.ARCHIVED }),
-        ...(shouldUnarchive && {
-          archivedAt: null,
-          ...(payload.status === undefined ? { status: ProjectStatus.ACTIVE } : {}),
-        }),
-      },
-      include: {
-        createdByUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            image: true,
-          },
+    const project = await prisma.$transaction(async (tx) => {
+      const updated = await tx.project.update({
+        where: { id: projectId },
+        data: {
+          ...(payload.name !== undefined && { name: payload.name.trim() }),
+          ...(payload.description !== undefined && {
+            description: payload.description === null ? null : payload.description.trim(),
+          }),
+          ...(payload.clientName !== undefined && {
+            clientName: payload.clientName === null ? null : payload.clientName.trim(),
+          }),
+          ...(payload.status !== undefined && { status: payload.status }),
+          ...(payload.startDate !== undefined && {
+            startDate: payload.startDate ? new Date(payload.startDate) : null,
+          }),
+          ...(payload.endDate !== undefined && {
+            endDate: payload.endDate ? new Date(payload.endDate) : null,
+          }),
+          ...(shouldArchive && { archivedAt: new Date(), status: ProjectStatus.ARCHIVED }),
+          ...(shouldUnarchive && {
+            archivedAt: null,
+            ...(payload.status === undefined ? { status: ProjectStatus.ACTIVE } : {}),
+          }),
         },
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                image: true,
+        include: {
+          createdByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          members: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  image: true,
+                },
               },
             },
+            orderBy: { createdAt: "asc" },
           },
-          orderBy: { createdAt: "asc" },
-        },
-        _count: {
-          select: {
-            tasks: {
-              where: { deletedAt: null },
+          _count: {
+            select: {
+              tasks: {
+                where: { deletedAt: null },
+              },
+              members: true,
             },
-            members: true,
           },
         },
-      },
+      });
+
+      if (shouldArchive) {
+        await auditLog({
+          tx,
+          workspaceId,
+          actorUserId: req.user!.id,
+          action: AuditLogAction.PROJECT_ARCHIVED,
+          entityType: AuditLogEntityType.PROJECT,
+          entityId: updated.id,
+          entityTitle: updated.name,
+        });
+      } else {
+        const diff = calculateDiff(
+          existingProject as any,
+          updated as any,
+          PROJECT_MEANINGFUL_FIELDS
+        );
+        if (diff) {
+          await auditLog({
+            tx,
+            workspaceId,
+            actorUserId: req.user!.id,
+            action: AuditLogAction.PROJECT_UPDATED,
+            entityType: AuditLogEntityType.PROJECT,
+            entityId: updated.id,
+            entityTitle: updated.name,
+            metadata: diff,
+          });
+        }
+      }
+
+      return updated;
     });
 
     return project;
@@ -466,6 +523,12 @@ const deleteProject = async (req: Request): Promise<void> => {
     await getScopedProjectOrThrow(req.user!.id, req.workspaceRole!, projectId, workspaceId);
 
     await prisma.$transaction(async (tx) => {
+      // Snapshot project name before delete
+      const projectToDelete = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { name: true },
+      });
+
       await tx.project.update({
         where: { id: projectId },
         data: { deletedAt: new Date() },
@@ -479,6 +542,18 @@ const deleteProject = async (req: Request): Promise<void> => {
       await tx.projectMember.deleteMany({
         where: { projectId },
       });
+
+      if (projectToDelete) {
+        await auditLog({
+          tx,
+          workspaceId,
+          actorUserId: req.user!.id,
+          action: AuditLogAction.PROJECT_DELETED,
+          entityType: AuditLogEntityType.PROJECT,
+          entityId: projectId,
+          entityTitle: projectToDelete.name,
+        });
+      }
     });
   } catch (error: any) {
     if (error instanceof AppError) throw error;

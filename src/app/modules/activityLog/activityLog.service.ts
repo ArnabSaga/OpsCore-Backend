@@ -58,7 +58,8 @@ const mapActivityLog = (row: {
   action: string;
   entityType: string;
   entityId: string | null;
-  metadata: unknown;
+  entityTitle: string | null;
+  metadata: any;
   createdAt: Date;
   user: {
     id: string;
@@ -74,6 +75,7 @@ const mapActivityLog = (row: {
     action: row.action,
     entityType: row.entityType,
     entityId: row.entityId ?? null,
+    entityTitle: row.entityTitle ?? null,
     metadata: sanitizeMetadata(row.metadata),
     createdAt: row.createdAt,
     user: {
@@ -150,6 +152,7 @@ const getActivityLogs = async (
         action: true,
         entityType: true,
         entityId: true,
+        entityTitle: true,
         metadata: true,
         createdAt: true,
         user: {
@@ -194,6 +197,7 @@ const getActivityLog = async (req: Request): Promise<IActivityLogItem> => {
       action: true,
       entityType: true,
       entityId: true,
+      entityTitle: true,
       metadata: true,
       createdAt: true,
       user: {
@@ -257,6 +261,7 @@ const getPlatformLogs = async (
         action: true,
         entityType: true,
         entityId: true,
+        entityTitle: true,
         metadata: true,
         createdAt: true,
         user: {

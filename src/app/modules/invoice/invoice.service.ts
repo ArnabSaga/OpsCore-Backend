@@ -3,7 +3,9 @@ import status from "http-status";
 import { Prisma } from "../../../generated/prisma/client";
 import { InvoiceStatus } from "../../../generated/prisma/enums";
 import { envVars } from "../../config/env";
+import { WorkspaceMemberRole } from "../../constants/role";
 import AppError from "../../errors/AppError";
+import { NotificationService } from "../notification/notification.service";
 import { prisma } from "../../lib/prisma";
 import { assertPlanFeatureEnabled, assertPlanLimitNotReached } from "../../utils/checkPlanLimit";
 import { sendEmail } from "../../utils/email";
@@ -26,6 +28,20 @@ import {
   mapInvoiceToEmailTemplateData,
 } from "./invoice.utils";
 import { calculateInvoiceStatus } from "../../utils/calculateInvoiceStatus";
+import { auditLog } from "../../utils/auditLog";
+import { AuditLogAction, AuditLogEntityType } from "../../constants/auditLog";
+import { calculateDiff } from "../../utils/diffHelper";
+
+const INVOICE_MEANINGFUL_FIELDS = [
+  "invoiceNumber",
+  "status",
+  "dueAt",
+  "issuedAt",
+  "customerName",
+  "customerEmail",
+  "amount",
+  "currency",
+];
 
 
 const normalizeCurrency = (currency?: string) => {
@@ -344,6 +360,21 @@ const createInvoice = async (req: Request): Promise<IInvoiceResponse> => {
             select: getInvoiceSelect,
           });
 
+          await auditLog({
+            tx,
+            workspaceId,
+            actorUserId: createdByUserId,
+            action: AuditLogAction.INVOICE_CREATED,
+            entityType: AuditLogEntityType.INVOICE,
+            entityId: created.id,
+            entityTitle: created.invoiceNumber,
+            metadata: {
+              amount: created.amount,
+              currency: created.currency,
+              customerName: created.customerName,
+            },
+          });
+
           return created;
         });
 
@@ -473,12 +504,26 @@ const updateInvoice = async (req: Request): Promise<IInvoiceResponse> => {
             dueDate: payload.dueAt !== undefined ? (payload.dueAt || new Date()) : existingInvoice.dueAt || new Date(),
             paidAt: existingInvoice.paidAt,
             canceledAt: existingInvoice.canceledAt,
-          }) as InvoiceStatus,
-        },
-        select: getInvoiceSelect,
-      });
+            }) as InvoiceStatus,
+          },
+          select: getInvoiceSelect,
+        });
 
-      return updated;
+        const diff = calculateDiff(existingInvoice as any, updated as any, INVOICE_MEANINGFUL_FIELDS);
+        if (diff) {
+          await auditLog({
+            tx,
+            workspaceId,
+            actorUserId: req.user!.id,
+            action: AuditLogAction.INVOICE_UPDATED,
+            entityType: AuditLogEntityType.INVOICE,
+            entityId: updated.id,
+            entityTitle: updated.invoiceNumber,
+            metadata: diff,
+          });
+        }
+
+        return updated;
     });
 
     return mapInvoiceResponse(invoice);
@@ -505,11 +550,31 @@ const deleteInvoice = async (req: Request): Promise<void> => {
       throw new AppError(status.BAD_REQUEST, reason);
     }
 
-    await prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        deletedAt: new Date(),
-      },
+    await prisma.$transaction(async (tx) => {
+      // Snapshot invoice number
+      const invoiceToDelete = await tx.invoice.findUnique({
+        where: { id: invoiceId },
+        select: { invoiceNumber: true },
+      });
+
+      await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          deletedAt: new Date(),
+        },
+      });
+
+      if (invoiceToDelete) {
+        await auditLog({
+          tx,
+          workspaceId,
+          actorUserId: req.user!.id,
+          action: AuditLogAction.INVOICE_DELETED,
+          entityType: AuditLogEntityType.INVOICE,
+          entityId: invoiceId,
+          entityTitle: invoiceToDelete.invoiceNumber,
+        });
+      }
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -532,13 +597,55 @@ const sendInvoice = async (req: Request): Promise<IInvoiceResponse> => {
       throw new AppError(status.BAD_REQUEST, "Canceled invoices cannot be sent");
     }
 
-    const updatedInvoice = await prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        ...(existingInvoice.issuedAt === null ? { issuedAt: new Date() } : {}),
-        sentAt: new Date(),
-      },
-      select: getInvoiceSelect,
+    const updatedInvoice = await prisma.$transaction(async (tx) => {
+      const updated = await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          ...(existingInvoice.issuedAt === null ? { issuedAt: new Date() } : {}),
+          sentAt: new Date(),
+        },
+        select: {
+          ...getInvoiceSelect,
+          workspace: {
+            select: {
+              name: true,
+              members: {
+                where: {
+                  role: { in: [WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN] },
+                  status: "ACTIVE",
+                },
+                select: { userId: true },
+              },
+            },
+          },
+        },
+      });
+
+      // Notify OWNER and ADMINs if this is the first time sending
+      if (existingInvoice.sentAt === null) {
+        const recipientUserIds = updated.workspace.members.map((m) => m.userId);
+
+        await NotificationService.createInvoiceSentNotification(tx, {
+          workspaceId,
+          recipientUserIds,
+          actorUserId: req.user!.id,
+          invoiceId: updated.id,
+          invoiceNumber: updated.invoiceNumber,
+          workspaceName: updated.workspace.name,
+        });
+      }
+
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: req.user!.id,
+        action: AuditLogAction.INVOICE_SENT,
+        entityType: AuditLogEntityType.INVOICE,
+        entityId: updated.id,
+        entityTitle: updated.invoiceNumber,
+      });
+
+      return updated;
     });
 
     const mappedInvoice = mapInvoiceResponse(updatedInvoice);
@@ -592,14 +699,60 @@ const markInvoicePaid = async (req: Request): Promise<IInvoiceResponse> => {
       throw new AppError(status.BAD_REQUEST, reason);
     }
 
-    const invoice = await prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        status: InvoiceStatus.PAID,
-        paidAt: new Date(),
-        ...(existingInvoice.issuedAt === null ? { issuedAt: new Date() } : {}),
-      },
-      select: getInvoiceSelect,
+    const invoice = await prisma.$transaction(async (tx) => {
+      const updated = await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          status: InvoiceStatus.PAID,
+          paidAt: new Date(),
+          ...(existingInvoice.issuedAt === null ? { issuedAt: new Date() } : {}),
+        },
+        select: {
+          ...getInvoiceSelect,
+          workspace: {
+            select: {
+              name: true,
+              members: {
+                where: {
+                  role: WorkspaceMemberRole.OWNER,
+                  status: "ACTIVE",
+                },
+                select: { userId: true },
+              },
+            },
+          },
+        },
+      });
+
+      // Notify creator and workspace owner if moving from unpaid to paid
+      if (existingInvoice.paidAt === null) {
+        const recipientUserIds = [updated.createdByUserId];
+        updated.workspace.members.forEach((m) => recipientUserIds.push(m.userId));
+
+        await NotificationService.createInvoicePaidNotification(tx, {
+          workspaceId,
+          recipientUserIds,
+          actorUserId: req.user!.id,
+          invoiceId: updated.id,
+          invoiceNumber: updated.invoiceNumber,
+          workspaceName: updated.workspace.name,
+        });
+      }
+
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: req.user!.id,
+        action: AuditLogAction.INVOICE_PAID,
+        entityType: AuditLogEntityType.INVOICE,
+        entityId: updated.id,
+        entityTitle: updated.invoiceNumber,
+        metadata: {
+          paidAt: updated.paidAt,
+        },
+      });
+
+      return updated;
     });
 
     return mapInvoiceResponse(invoice);
@@ -626,13 +779,27 @@ const cancelInvoice = async (req: Request): Promise<IInvoiceResponse> => {
       throw new AppError(status.BAD_REQUEST, reason);
     }
 
-    const invoice = await prisma.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        status: InvoiceStatus.CANCELED,
-        canceledAt: new Date(),
-      },
-      select: getInvoiceSelect,
+    const invoice = await prisma.$transaction(async (tx) => {
+      const updated = await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          status: InvoiceStatus.CANCELED,
+          canceledAt: new Date(),
+        },
+        select: getInvoiceSelect,
+      });
+
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: req.user!.id,
+        action: AuditLogAction.INVOICE_CANCELED,
+        entityType: AuditLogEntityType.INVOICE,
+        entityId: updated.id,
+        entityTitle: updated.invoiceNumber,
+      });
+
+      return updated;
     });
 
     return mapInvoiceResponse(invoice);

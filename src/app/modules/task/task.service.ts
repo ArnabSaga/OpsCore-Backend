@@ -10,6 +10,7 @@ import {
   assertPlanLimitNotReached,
   resolveWorkspacePlanContext,
 } from "../../utils/checkPlanLimit";
+import { NotificationService } from "../notification/notification.service";
 import {
   ICreateTaskCommentPayload,
   ICreateTaskPayload,
@@ -25,6 +26,19 @@ import {
   IUpdateTaskCommentPayload,
   IUpdateTaskPayload,
 } from "./task.interface";
+import { auditLog } from "../../utils/auditLog";
+import { AuditLogAction, AuditLogEntityType } from "../../constants/auditLog";
+import { calculateDiff } from "../../utils/diffHelper";
+
+const TASK_MEANINGFUL_FIELDS = [
+  "title",
+  "description",
+  "status",
+  "priority",
+  "assignedToUserId",
+  "dueDate",
+  "projectId",
+];
 
 const getProjectOrThrow = async (projectId: string, workspaceId: string) => {
   const project = await prisma.project.findFirst({
@@ -523,6 +537,7 @@ const createTask = async (req: Request): Promise<ITaskResponse> => {
   try {
     const workspaceId = req.workspaceId!;
     const createdByUserId = req.user!.id;
+    const userName = req.user!.name;
     const payload = req.body as ICreateTaskPayload;
 
     await assertPlanFeatureEnabled(workspaceId, "tasks.create");
@@ -539,25 +554,57 @@ const createTask = async (req: Request): Promise<ITaskResponse> => {
       await assertAssignableUser(payload.assignedToUserId, workspaceId);
     }
 
-    const task = await prisma.task.create({
-      data: {
+    const task = await prisma.$transaction(async (tx) => {
+      const createdTask = await tx.task.create({
+        data: {
+          workspaceId,
+          projectId: payload.projectId,
+          createdByUserId,
+          assignedToUserId: payload.assignedToUserId ?? null,
+          title: payload.title.trim(),
+          description: payload.description?.trim(),
+          status: payload.status ?? TASK_DEFAULTS.status,
+          priority: payload.priority ?? TASK_DEFAULTS.priority,
+          dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
+        },
+        select: getTaskSelect,
+      });
+
+      // Notify assignee if it's someone else
+      if (createdTask.assignedToUserId && createdTask.assignedToUserId !== createdByUserId) {
+        await NotificationService.createTaskAssignedNotification(tx, {
+          workspaceId,
+          userId: createdTask.assignedToUserId,
+          actorUserId: createdByUserId,
+          taskId: createdTask.id,
+          taskTitle: createdTask.title,
+          assignerName: userName,
+        });
+      }
+
+      await auditLog({
+        tx,
         workspaceId,
-        projectId: payload.projectId,
-        createdByUserId,
-        assignedToUserId: payload.assignedToUserId ?? null,
-        title: payload.title.trim(),
-        description: payload.description?.trim(),
-        status: payload.status ?? TASK_DEFAULTS.status,
-        priority: payload.priority ?? TASK_DEFAULTS.priority,
-        dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
-      },
-      select: getTaskSelect,
+        actorUserId: createdByUserId,
+        action: AuditLogAction.TASK_CREATED,
+        entityType: AuditLogEntityType.TASK,
+        entityId: createdTask.id,
+        entityTitle: createdTask.title,
+        metadata: {
+          projectId: createdTask.projectId,
+          assignedToUserId: createdTask.assignedToUserId,
+          status: createdTask.status,
+          priority: createdTask.priority,
+        },
+      });
+
+      return createdTask;
     });
 
     const planContext = await resolveWorkspacePlanContext(workspaceId);
 
     return {
-      ...task,
+      ...(task as any),
       planMeta: {
         workspacePlan: planContext.effectivePlan,
         isTrialActive: planContext.isTrialActive,
@@ -614,11 +661,13 @@ const updateTask = async (req: Request): Promise<ITaskResponse> => {
   try {
     const workspaceId = req.workspaceId!;
     const taskId = req.params.taskId as string;
+    const userId = req.user!.id;
+    const userName = req.user!.name;
     const payload = req.body as IUpdateTaskPayload;
 
-    const existingTask = await getScopedTaskOrThrow(req.user!.id, req.workspaceRole!, taskId, workspaceId);
+    const existingTask = await getScopedTaskOrThrow(userId, req.workspaceRole!, taskId, workspaceId);
 
-    assertTaskUpdatePermission(req.user!.id, req.workspaceRole!, payload, existingTask);
+    assertTaskUpdatePermission(userId, req.workspaceRole!, payload, existingTask);
 
     if (existingTask.project.archivedAt || existingTask.project.status === "ARCHIVED") {
       throw new AppError(status.BAD_REQUEST, "Tasks under an archived project cannot be updated");
@@ -632,30 +681,68 @@ const updateTask = async (req: Request): Promise<ITaskResponse> => {
       await assertAssignableUser(payload.assignedToUserId, workspaceId);
     }
 
-    const task = await prisma.task.update({
-      where: { id: taskId },
-      data: {
-        ...(payload.projectId !== undefined && { projectId: payload.projectId }),
-        ...(payload.title !== undefined && { title: payload.title.trim() }),
-        ...(payload.description !== undefined && {
-          description: payload.description === null ? null : payload.description.trim(),
-        }),
-        ...(payload.assignedToUserId !== undefined && {
-          assignedToUserId: payload.assignedToUserId,
-        }),
-        ...(payload.status !== undefined && { status: payload.status }),
-        ...(payload.priority !== undefined && { priority: payload.priority }),
-        ...(payload.dueDate !== undefined && {
-          dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
-        }),
-      },
-      select: getTaskSelect,
+    const task = await prisma.$transaction(async (tx) => {
+      const updatedTask = await tx.task.update({
+        where: { id: taskId },
+        data: {
+          ...(payload.projectId !== undefined && { projectId: payload.projectId }),
+          ...(payload.title !== undefined && { title: payload.title.trim() }),
+          ...(payload.description !== undefined && {
+            description: payload.description === null ? null : payload.description.trim(),
+          }),
+          ...(payload.assignedToUserId !== undefined && {
+            assignedToUserId: payload.assignedToUserId,
+          }),
+          ...(payload.status !== undefined && { status: payload.status }),
+          ...(payload.priority !== undefined && { priority: payload.priority }),
+          ...(payload.dueDate !== undefined && {
+            dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
+          }),
+        },
+        select: getTaskSelect,
+      });
+
+      // Notify ONLY if assignee actually changed to a new, non-null person
+      const isNewAssignee =
+        payload.assignedToUserId !== undefined &&
+        payload.assignedToUserId !== null &&
+        payload.assignedToUserId !== existingTask.assignedToUserId;
+
+      if (isNewAssignee && payload.assignedToUserId && payload.assignedToUserId !== userId) {
+        await NotificationService.createTaskAssignedNotification(tx, {
+          workspaceId,
+          userId: payload.assignedToUserId,
+          actorUserId: userId,
+          taskId: updatedTask.id,
+          taskTitle: updatedTask.title,
+          assignerName: userName,
+        });
+      }
+
+      const diff = calculateDiff(existingTask as any, updatedTask as any, TASK_MEANINGFUL_FIELDS);
+
+      if (diff) {
+        await auditLog({
+          tx,
+          workspaceId,
+          actorUserId: userId,
+          action: AuditLogAction.TASK_UPDATED,
+          entityType: AuditLogEntityType.TASK,
+          entityId: updatedTask.id,
+          entityTitle: updatedTask.title,
+          metadata: {
+            ...diff,
+          },
+        });
+      }
+
+      return updatedTask;
     });
 
     const planContext = await resolveWorkspacePlanContext(workspaceId);
 
     return {
-      ...task,
+      ...(task as any),
       planMeta: {
         workspacePlan: planContext.effectivePlan,
         isTrialActive: planContext.isTrialActive,
@@ -692,6 +779,12 @@ const deleteTask = async (req: Request): Promise<void> => {
     });
 
     await prisma.$transaction(async (tx) => {
+      // Snapshot the task before delete
+      const taskToDelete = await tx.task.findUnique({
+        where: { id: taskId },
+        select: { title: true },
+      });
+
       await tx.taskComment.deleteMany({
         where: {
           taskId,
@@ -710,6 +803,18 @@ const deleteTask = async (req: Request): Promise<void> => {
         where: { id: taskId },
         data: { deletedAt: new Date() },
       });
+
+      if (taskToDelete) {
+        await auditLog({
+          tx,
+          workspaceId,
+          actorUserId: req.user!.id,
+          action: AuditLogAction.TASK_DELETED,
+          entityType: AuditLogEntityType.TASK,
+          entityId: taskId,
+          entityTitle: taskToDelete.title,
+        });
+      }
     });
 
     await Promise.allSettled(
@@ -777,10 +882,12 @@ const createTaskComment = async (req: Request): Promise<ITaskCommentResponse> =>
     const workspaceId = req.workspaceId!;
     const taskId = req.params.taskId as string;
     const userId = req.user!.id;
+    const userName = req.user!.name;
     const payload = req.body as ICreateTaskCommentPayload;
 
     await assertPlanFeatureEnabled(workspaceId, "tasks.comments");
-    await assertTaskWriteAllowed(req.user!.id, req.workspaceRole!, taskId, workspaceId);
+    const existingTask = await assertTaskWriteAllowed(userId, req.workspaceRole!, taskId, workspaceId);
+
     await assertPlanLimitNotReached({
       workspaceId,
       limitKey: "taskCommentsPerTask",
@@ -790,14 +897,38 @@ const createTaskComment = async (req: Request): Promise<ITaskCommentResponse> =>
         'You have reached the "taskCommentsPerTask" limit for this task on your current plan.',
     });
 
-    const comment = await prisma.taskComment.create({
-      data: {
-        workspaceId,
-        taskId,
-        userId,
-        body: payload.body.trim(),
-      },
-      select: taskCommentSelect,
+    const comment = await prisma.$transaction(async (tx) => {
+      const createdComment = await tx.taskComment.create({
+        data: {
+          workspaceId,
+          taskId,
+          userId,
+          body: payload.body.trim(),
+        },
+        select: taskCommentSelect,
+      });
+
+      // Notify task assignee if they exist and are not the commenter
+      if (existingTask.assignedToUserId && existingTask.assignedToUserId !== userId) {
+        // Need to fetch task for title
+        const task = await tx.task.findUnique({
+          where: { id: taskId },
+          select: { title: true },
+        });
+
+        if (task) {
+          await NotificationService.createTaskCommentNotification(tx, {
+            workspaceId,
+            userId: existingTask.assignedToUserId,
+            actorUserId: userId,
+            taskId,
+            taskTitle: task.title,
+            commenterName: userName,
+          });
+        }
+      }
+
+      return createdComment;
     });
 
     return comment;
