@@ -153,6 +153,21 @@ const updateNotificationPreferences = catchAsync(async (req: Request, res: Respo
   });
 });
 
+const triggerDemoNotification = catchAsync(async (req: Request, res: Response) => {
+  console.log("DEMO NOTIF TRIGGERED", { workspaceId: req.workspaceId, userId: req.user?.id });
+  const result = await NotificationService.triggerDemoNotificationIntoDB(
+    req.workspaceId!,
+    req.user!.id
+  );
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: "Demo notification triggered successfully",
+    data: result,
+  });
+});
+
 export const NotificationController = {
   getNotifications,
   getUnreadSummary,
@@ -164,4 +179,5 @@ export const NotificationController = {
   deleteNotification,
   getNotificationPreferences,
   updateNotificationPreferences,
+  triggerDemoNotification,
 };

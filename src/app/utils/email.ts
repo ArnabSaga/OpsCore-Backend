@@ -33,6 +33,14 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("[EMAIL] SMTP verify failed:", error);
+  } else {
+    console.log("[EMAIL] SMTP server is ready:", success);
+  }
+});
+
 export const sendEmail = async ({
   to,
   subject,
@@ -44,6 +52,8 @@ export const sendEmail = async ({
 }: SendEmailOptions): Promise<void> => {
   try {
     const templatePath = path.resolve(process.cwd(), `src/app/templates/${templateName}.ejs`);
+
+    console.log("[EMAIL] Rendering template:", templatePath);
 
     const html = await ejs.renderFile(templatePath, templateData, {
       async: true,
@@ -62,9 +72,9 @@ export const sendEmail = async ({
       })),
     });
 
-    console.log(`Email sent: ${info.messageId}`);
+    console.log(`[EMAIL] Email sent successfully: ${info.messageId}`);
   } catch (error) {
-    console.error("Email sending error:", error);
+    console.error("[EMAIL] Email sending error:", error);
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to send email");
   }
 };

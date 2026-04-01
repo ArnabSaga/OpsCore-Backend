@@ -1,10 +1,10 @@
 import { fromNodeHeaders } from "better-auth/node";
 import { Request } from "express";
 import status from "http-status";
+import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../constants/role";
 import AppError from "../../errors/AppError";
 import { auth } from "../../lib/auth";
 import { prisma } from "../../lib/prisma";
-import { WorkspaceMemberRole, WorkspaceMemberStatus } from "../../constants/role";
 import { generateSlug } from "../../utils/generateSlug";
 import {
   IChangePasswordPayload,
@@ -45,13 +45,18 @@ const generateUniqueWorkspaceSlug = async (workspaceName: string): Promise<strin
 };
 
 const register = async (req: Request): Promise<IRegisterServiceResponse> => {
-  try {
-    const { name, email, password, workspaceName } = req.body as IRegisterPayload;
+  const { name, email, password, workspaceName } = req.body as IRegisterPayload;
+  const normalizedEmail = email.trim().toLowerCase();
 
-    const response = await auth.api.signUpEmail({
+  let authResponse: globalThis.Response | null = null;
+
+  try {
+    console.log("[AUTH][REGISTER] Starting registration for:", normalizedEmail);
+
+    authResponse = await auth.api.signUpEmail({
       body: {
-        name,
-        email,
+        name: name.trim(),
+        email: normalizedEmail,
         password,
         systemRole: "USER",
         isActive: true,
@@ -61,76 +66,141 @@ const register = async (req: Request): Promise<IRegisterServiceResponse> => {
       asResponse: true,
     });
 
-    await throwIfFailed(response, "Registration failed");
+    await throwIfFailed(authResponse, "Registration failed");
 
-    const data = (await response.json()) as {
-      user: {
-        id: string;
-        name: string;
-        email: string;
-        image?: string | null;
-        emailVerified?: boolean;
-      };
-    };
+    console.log("[AUTH][REGISTER] Better Auth signup succeeded for:", normalizedEmail);
 
-    const userId = data.user.id;
-    const slug = await generateUniqueWorkspaceSlug(workspaceName);
+    const createdUser = await prisma.user.findFirst({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        emailVerified: true,
+        isActive: true,
+        isDeleted: true,
+        systemRole: true,
+      },
+    });
 
-    try {
-      const workspace = await prisma.$transaction(async (tx) => {
+    if (!createdUser) {
+      console.error("[AUTH][REGISTER] User was not found in DB after sign up:", normalizedEmail);
+      throw new AppError(
+        status.INTERNAL_SERVER_ERROR,
+        "User was created but could not be loaded from the database."
+      );
+    }
+
+    console.log("[AUTH][REGISTER] User found in DB:", {
+      id: createdUser.id,
+      email: createdUser.email,
+      emailVerified: createdUser.emailVerified,
+    });
+
+    const existingMembership = await prisma.workspaceMember.findFirst({
+      where: { userId: createdUser.id },
+      select: { workspaceId: true },
+    });
+
+    let workspace: {
+      id: string;
+      name: string;
+      slug: string;
+    } | null = null;
+
+    if (existingMembership?.workspaceId) {
+      workspace = await prisma.workspace.findUnique({
+        where: { id: existingMembership.workspaceId },
+        select: { id: true, name: true, slug: true },
+      });
+
+      console.log("[AUTH][REGISTER] Existing workspace membership found:", workspace?.id);
+    }
+
+    if (!workspace) {
+      const safeWorkspaceName = workspaceName.trim();
+      const slug = await generateUniqueWorkspaceSlug(safeWorkspaceName);
+
+      console.log("[AUTH][REGISTER] Creating workspace:", {
+        userId: createdUser.id,
+        workspaceName: safeWorkspaceName,
+        slug,
+      });
+
+      workspace = await prisma.$transaction(async (tx) => {
         const createdWorkspace = await tx.workspace.create({
           data: {
-            name: workspaceName,
+            name: safeWorkspaceName,
             slug,
-            createdByUserId: userId,
+            createdByUserId: createdUser.id,
           },
           select: {
             id: true,
             name: true,
             slug: true,
-            createdAt: true,
-            updatedAt: true,
           },
         });
 
         await tx.workspaceMember.create({
           data: {
             workspaceId: createdWorkspace.id,
-            userId,
+            userId: createdUser.id,
             role: WorkspaceMemberRole.OWNER,
             status: WorkspaceMemberStatus.ACTIVE,
-            addedByUserId: userId,
+            addedByUserId: createdUser.id,
           },
         });
-        
-        // Initialize active workspace in session if session exists
-        const sessionData = await auth.api.getSession({
-          headers: fromNodeHeaders(req.headers),
-        });
-
-        if (sessionData?.session?.id) {
-          await tx.session.update({
-            where: { id: sessionData.session.id },
-            data: { activeWorkspaceId: createdWorkspace.id },
-          });
-        }
 
         return createdWorkspace;
       });
 
-      return {
-        authResponse: response,
-        user: data.user,
-        workspace,
-      };
-    } catch {
-      throw new AppError(
-        status.INTERNAL_SERVER_ERROR,
-        "User was created but workspace setup failed. Please contact support or retry."
-      );
+      console.log("[AUTH][REGISTER] Workspace created successfully:", workspace.id);
     }
+
+    // FORCE SEND EMAIL VERIFICATION OTP
+    if (!createdUser.emailVerified) {
+      console.log("[AUTH][REGISTER] Sending verification OTP manually to:", normalizedEmail);
+
+      const otpResponse = await auth.api.sendVerificationOTP({
+        body: {
+          email: normalizedEmail,
+          type: "email-verification",
+        },
+        headers: fromNodeHeaders(req.headers),
+        asResponse: true,
+      });
+
+      await throwIfFailed(otpResponse, "Failed to send verification OTP");
+
+      console.log("[AUTH][REGISTER] Verification OTP request completed for:", normalizedEmail);
+    }
+
+    return {
+      authResponse,
+      user: {
+        id: createdUser.id,
+        name: createdUser.name,
+        email: createdUser.email,
+        image: createdUser.image ?? null,
+        emailVerified: createdUser.emailVerified ?? false,
+        systemRole: String(createdUser.systemRole),
+        isActive: createdUser.isActive,
+        isDeleted: createdUser.isDeleted,
+      },
+      workspace,
+    };
   } catch (error) {
-    if (error instanceof AppError) throw error;
+    console.error("[AUTH][REGISTER] Registration flow failed:", error);
+
+    if (error instanceof AppError) {
+      throw error;
+    }
 
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Registration failed");
   }
@@ -141,14 +211,17 @@ const login = async (req: Request): Promise<ILoginServiceResponse> => {
     const { email, password } = req.body as ILoginPayload;
 
     const response = await auth.api.signInEmail({
-      body: { email, password },
+      body: {
+        email,
+        password,
+      },
       headers: fromNodeHeaders(req.headers),
       asResponse: true,
     });
 
-    await throwIfFailed(response, "Invalid credentials");
+    await throwIfFailed(response, "Login failed");
 
-    const data = (await response.json()) as {
+    const data = (await response.clone().json()) as {
       user: {
         id: string;
         name: string;
@@ -161,7 +234,6 @@ const login = async (req: Request): Promise<ILoginServiceResponse> => {
     const dbUser = await prisma.user.findUnique({
       where: { id: data.user.id },
       select: {
-        id: true,
         isActive: true,
         isDeleted: true,
         systemRole: true,
@@ -178,27 +250,6 @@ const login = async (req: Request): Promise<ILoginServiceResponse> => {
 
     if (!dbUser.isActive) {
       throw new AppError(status.FORBIDDEN, "User account is inactive");
-    }
-
-    // Initialize active workspace in session if not already set
-    const sessionData = await auth.api.getSession({
-      headers: fromNodeHeaders(req.headers),
-    });
-
-    if (sessionData?.session?.id) {
-      // Find the first available workspace for this user
-      const firstWorkspace = await prisma.workspaceMember.findFirst({
-        where: { userId: dbUser.id, status: WorkspaceMemberStatus.ACTIVE },
-        select: { workspaceId: true },
-        orderBy: { createdAt: "asc" },
-      });
-
-      if (firstWorkspace) {
-        await prisma.session.update({
-          where: { id: sessionData.session.id },
-          data: { activeWorkspaceId: firstWorkspace.workspaceId },
-        });
-      }
     }
 
     return {
@@ -323,9 +374,15 @@ const getMe = async (req: Request): Promise<IMeResponse> => {
 const forgotPassword = async (req: Request): Promise<void> => {
   try {
     const { email } = req.body as IForgotPasswordPayload;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const user = await prisma.user.findFirst({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+      },
       select: {
         id: true,
         isActive: true,
@@ -334,22 +391,29 @@ const forgotPassword = async (req: Request): Promise<void> => {
     });
 
     if (!user || user.isDeleted || !user.isActive) {
+      console.warn(
+        `[AUTH][FORGOT_PASSWORD] Reset requested for unavailable account: ${normalizedEmail}`
+      );
       return;
     }
 
-    const response = await auth.api.forgetPasswordEmailOTP({
+    const response = await auth.api.requestPasswordResetEmailOTP({
       body: {
-        email,
+        email: normalizedEmail,
       },
       headers: fromNodeHeaders(req.headers),
       asResponse: true,
     });
 
     await throwIfFailed(response, "Failed to send password reset OTP");
-  } catch (error) {
+  } catch (error: any) {
+    console.error("[AUTH][FORGOT_PASSWORD] flow failed:", error);
     if (error instanceof AppError) throw error;
 
-    throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to send password reset OTP");
+    throw new AppError(
+      status.INTERNAL_SERVER_ERROR,
+      error?.message || "Failed to send password reset OTP"
+    );
   }
 };
 
@@ -359,13 +423,14 @@ const resetPassword = async (req: Request): Promise<void> => {
 
     await auth.api.resetPasswordEmailOTP({
       body: {
-        email,
-        otp,
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
         password: newPassword,
       },
       headers: fromNodeHeaders(req.headers),
     });
   } catch (error: any) {
+    console.error("Reset password flow failed:", error);
     if (error instanceof AppError) throw error;
 
     throw new AppError(status.BAD_REQUEST, error?.message || "Password reset failed");
@@ -400,8 +465,8 @@ const verifyEmail = async (req: Request): Promise<void> => {
 
     await auth.api.verifyEmailOTP({
       body: {
-        email,
-        otp,
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
       },
       headers: fromNodeHeaders(req.headers),
     });
@@ -415,9 +480,15 @@ const verifyEmail = async (req: Request): Promise<void> => {
 const resendVerification = async (req: Request): Promise<void> => {
   try {
     const { email } = req.body as IResendVerificationPayload;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const user = await prisma.user.findFirst({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+      },
       select: {
         id: true,
         emailVerified: true,
@@ -444,7 +515,7 @@ const resendVerification = async (req: Request): Promise<void> => {
 
     const response = await auth.api.sendVerificationOTP({
       body: {
-        email,
+        email: normalizedEmail,
         type: "email-verification",
       },
       headers: fromNodeHeaders(req.headers),
@@ -504,9 +575,10 @@ const googleLoginSuccess = async (session: Record<string, any>) => {
     });
   }
 
-  // Sync active workspace to session for OAuth users
   const sessionData = await auth.api.getSession({
-    headers: fromNodeHeaders({ cookie: `better-auth.session_token=${session.session.sessionToken}` }),
+    headers: fromNodeHeaders({
+      cookie: `better-auth.session_token=${session.session.sessionToken}`,
+    }),
   });
 
   if (sessionData?.session?.id) {
@@ -524,7 +596,9 @@ const googleLoginSuccess = async (session: Record<string, any>) => {
   }
 };
 
-const switchWorkspace = async (req: Request): Promise<{ workspaceId: string; workspaceName: string; role: string }> => {
+const switchWorkspace = async (
+  req: Request
+): Promise<{ workspaceId: string; workspaceName: string; role: string }> => {
   try {
     const { workspaceId } = req.body as ISwitchWorkspacePayload;
 
@@ -536,7 +610,6 @@ const switchWorkspace = async (req: Request): Promise<{ workspaceId: string; wor
       throw new AppError(status.UNAUTHORIZED, "Session not found");
     }
 
-    // Validate the user is an ACTIVE member of the target workspace
     const membership = await prisma.workspaceMember.findFirst({
       where: {
         userId: req.user!.id,
@@ -559,7 +632,6 @@ const switchWorkspace = async (req: Request): Promise<{ workspaceId: string; wor
       throw new AppError(status.NOT_FOUND, "Workspace no longer exists");
     }
 
-    // Update the session's active workspace
     await prisma.session.update({
       where: { id: sessionData.session.id },
       data: { activeWorkspaceId: workspaceId },

@@ -21,13 +21,16 @@ app.post("/api/v1/webhooks/stripe", express.raw({ type: "application/json" }), s
 
 // parsers
 app.use(express.json());
+
+// origins
+const allowedOrigins = [
+  envVars.FRONTEND_URL,
+  ...(envVars.NODE_ENV === "development" ? ["http://localhost:3000"] : []),
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: [
-      envVars.FRONTEND_URL,
-      envVars.BETTER_AUTH_URL,
-      "https://opscore-frontend-arnabsagas-projects.vercel.app",
-    ],
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-workspace-id", "Cookie"],

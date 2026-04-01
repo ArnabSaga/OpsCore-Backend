@@ -10,6 +10,9 @@ const router = Router();
 router.use(requireAuth);
 router.use(workspaceContext);
 
+// DEBUG TEST: Move demo to top
+router.post("/demo", NotificationController.triggerDemoNotification);
+
 router.get(
   "/",
   validateRequest(NotificationValidation.getNotificationsQuerySchema),

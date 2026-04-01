@@ -9,6 +9,10 @@ import {
   IWorkspaceMemberResponse,
 } from "./workspaceMember.interface";
 import { auditLog } from "../../utils/auditLog";
+import { AuditLogAction, AuditLogEntityType } from "../../constants/auditLog";
+import { calculateDiff } from "../../utils/diffHelper";
+
+const MEMBER_MEANINGFUL_FIELDS = ["role", "status"];
 
 
 const getScopedMemberOrThrow = async (workspaceId: string, memberId: string) => {
@@ -214,37 +218,61 @@ const updateMember = async (req: Request): Promise<IWorkspaceMemberResponse> => 
       }
     }
 
-    const updatedMember = await prisma.workspaceMember.update({
-      where: { id: memberId },
-      data: {
-        ...(payload.role !== undefined ? { role: payload.role } : {}),
-        ...(payload.status !== undefined ? { status: payload.status } : {}),
-      },
-      select: {
-        id: true,
-        workspaceId: true,
-        userId: true,
-        role: true,
-        status: true,
-        joinedAt: true,
-        addedByUserId: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            image: true,
+    const updatedMember = await prisma.$transaction(async (tx) => {
+      const updated = await tx.workspaceMember.update({
+        where: { id: memberId },
+        data: {
+          ...(payload.role !== undefined ? { role: payload.role } : {}),
+          ...(payload.status !== undefined ? { status: payload.status } : {}),
+        },
+        select: {
+          id: true,
+          workspaceId: true,
+          userId: true,
+          role: true,
+          status: true,
+          joinedAt: true,
+          addedByUserId: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          addedByUser: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
           },
         },
-        addedByUser: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            image: true,
-          },
-        },
-      },
+      });
+
+      const diff = calculateDiff(existingMember as any, updated as any, MEMBER_MEANINGFUL_FIELDS);
+
+      if (diff) {
+        let action = AuditLogAction.MEMBER_ROLE_UPDATED;
+        if (payload.status === WorkspaceMemberStatus.INACTIVE) {
+          action = AuditLogAction.MEMBER_DEACTIVATED;
+        }
+
+        await auditLog({
+          tx,
+          workspaceId,
+          actorUserId: requestingUserId,
+          action,
+          entityType: AuditLogEntityType.USER,
+          entityId: updated.userId,
+          entityTitle: updated.user.name,
+          metadata: diff,
+        });
+      }
+
+      return updated;
     });
 
     return mapWorkspaceMemberResponse(updatedMember, req.user!.id);
@@ -278,16 +306,20 @@ const removeMember = async (req: Request): Promise<void> => {
       }
     }
 
-    await prisma.workspaceMember.delete({
-      where: { id: memberId },
-    });
+    await prisma.$transaction(async (tx) => {
+      await tx.workspaceMember.delete({
+        where: { id: memberId },
+      });
 
-    await auditLog({
-      workspaceId,
-      userId: requestingUserId,
-      action: "MEMBER_REMOVED",
-      entityType: "USER",
-      entityId: existingMember.userId,
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: requestingUserId,
+        action: AuditLogAction.MEMBER_REMOVED,
+        entityType: AuditLogEntityType.USER,
+        entityId: existingMember.userId,
+        entityTitle: existingMember.user.name,
+      });
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -340,14 +372,16 @@ const transferOwnership = async (req: Request) => {
         where: { id: workspaceId },
         data: { createdByUserId: targetMember.userId },
       });
-    });
 
-    await auditLog({
-      workspaceId,
-      userId: requestingUserId,
-      action: "OWNERSHIP_TRANSFERRED",
-      entityType: "USER",
-      entityId: targetMember.userId,
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: requestingUserId,
+        action: AuditLogAction.MEMBER_OWNERSHIP_TRANSFERRED,
+        entityType: AuditLogEntityType.USER,
+        entityId: targetMember.userId,
+        entityTitle: targetMember.user.name,
+      });
     });
   } catch (error) {
     if (error instanceof AppError) throw error;

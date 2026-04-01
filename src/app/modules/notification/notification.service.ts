@@ -7,6 +7,7 @@ import {
   NotificationChannel,
   NotificationStatus,
   NotificationType,
+  NotificationEntityType,
 } from "./notification.constants";
 import {
   IMarkAllAsReadPayload,
@@ -15,6 +16,11 @@ import {
   IUpdateNotificationPreferencePayload,
 } from "./notification.interface";
 import { generateActionUrl } from "./notification.utils";
+
+type PrismaTx = Omit<
+  Prisma.TransactionClient,
+  "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
+>;
 
 const getNotificationsFromDB = async (
   workspaceId: string,
@@ -76,26 +82,35 @@ const getUnreadSummaryFromDB = async (
   workspaceId: string,
   userId: string
 ): Promise<INotificationSummaryResponse> => {
-  const where = {
+  const baseWhere = {
     workspaceId,
     userId,
-    status: NotificationStatus.UNREAD,
-    archivedAt: null,
     deletedAt: null,
   };
 
-  const totalUnread = await prisma.notification.count({ where });
-
-  const unreadByType = await prisma.notification.groupBy({
-    by: ["type"],
-    where,
-    _count: {
-      type: true,
-    },
-  });
+  const [totalUnread, totalArchived, totalActive, unreadByType] = await Promise.all([
+    prisma.notification.count({
+      where: { ...baseWhere, status: NotificationStatus.UNREAD, archivedAt: null },
+    }),
+    prisma.notification.count({
+      where: { ...baseWhere, status: NotificationStatus.ARCHIVED },
+    }),
+    prisma.notification.count({
+      where: { ...baseWhere, archivedAt: null }, // Both READ and UNREAD
+    }),
+    prisma.notification.groupBy({
+      by: ["type"],
+      where: { ...baseWhere, status: NotificationStatus.UNREAD, archivedAt: null },
+      _count: {
+        type: true,
+      },
+    }),
+  ]);
 
   return {
     totalUnread,
+    totalArchived,
+    totalActive,
     byType: unreadByType.map((group) => ({
       type: group.type,
       count: group._count.type,
@@ -230,8 +245,13 @@ const deleteNotificationFromDB = async (
   });
 };
 
-const getNotificationPreferencesFromDB = async (workspaceId: string, userId: string) => {
-  let preference = await prisma.notificationPreference.findUnique({
+const getNotificationPreferencesFromDB = async (
+  workspaceId: string,
+  userId: string,
+  tx?: PrismaTx
+) => {
+  const client = tx || prisma;
+  let preference = await client.notificationPreference.findUnique({
     where: {
       workspaceId_userId: {
         workspaceId,
@@ -241,7 +261,7 @@ const getNotificationPreferencesFromDB = async (workspaceId: string, userId: str
   });
 
   if (!preference) {
-    preference = await prisma.notificationPreference.create({
+    preference = await client.notificationPreference.create({
       data: {
         workspaceId,
         userId,
@@ -258,28 +278,28 @@ const updateNotificationPreferencesIntoDB = async (
   userId: string,
   payload: IUpdateNotificationPreferencePayload
 ) => {
-  // Ensure preference exists
-  await getNotificationPreferencesFromDB(workspaceId, userId);
+  // Use root prisma here since this is usually a standalone action
+  return await prisma.$transaction(async (tx) => {
+    await getNotificationPreferencesFromDB(workspaceId, userId, tx);
 
-  return await prisma.notificationPreference.update({
-    where: {
-      workspaceId_userId: {
-        workspaceId,
-        userId,
+    return await tx.notificationPreference.update({
+      where: {
+        workspaceId_userId: {
+          workspaceId,
+          userId,
+        },
       },
-    },
-    data: payload,
+      data: payload,
+    });
   });
 };
 
 const createNotification = async (
-  tx: Omit<
-    Prisma.TransactionClient,
-    "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
-  >,
+  tx: PrismaTx,
   data: {
     workspaceId: string;
     userId: string;
+    actorUserId: string;
     type: string;
     title: string;
     message: string;
@@ -289,9 +309,12 @@ const createNotification = async (
     metadata?: Record<string, unknown>;
   }
 ) => {
-  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId);
+  // 1. Self-suppression logic
+  if (data.userId === data.actorUserId) return null;
 
-  // Channel-aware preference guard
+  // 2. Preference lookup (in-app enabled by default)
+  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId, tx);
+
   const channel = data.channel || NotificationChannel.IN_APP;
   if (channel === NotificationChannel.IN_APP && !preferences.inAppEnabled) return null;
   if (channel === NotificationChannel.EMAIL && !preferences.emailEnabled) return null;
@@ -315,24 +338,57 @@ const createNotification = async (
 };
 
 /**
+ * Helper to handle bulk notifications with unique recipients and suppression
+ */
+const createBulkNotifications = async (
+  tx: PrismaTx,
+  data: {
+    workspaceId: string;
+    actorUserId: string;
+    recipientUserIds: string[];
+    type: string;
+    title: string;
+    message: string;
+    entityType?: string;
+    entityId?: string;
+    metadata?: Record<string, unknown>;
+  }
+) => {
+  const uniqueRecipients = Array.from(new Set(data.recipientUserIds)).filter(
+    (id) => id !== data.actorUserId
+  );
+
+  return await Promise.all(
+    uniqueRecipients.map((userId) =>
+      createNotification(tx, {
+        ...data,
+        userId,
+      })
+    )
+  );
+};
+
+/**
  * Domain-specific helper for Task Assignment
  */
 const createTaskAssignedNotification = async (
-  tx: Prisma.TransactionClient,
+  tx: PrismaTx,
   data: {
     workspaceId: string;
     userId: string;
+    actorUserId: string;
     taskId: string;
     taskTitle: string;
     assignerName: string;
   }
 ) => {
-  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId);
+  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId, tx);
   if (!preferences.taskAssigned) return null;
 
   return await createNotification(tx, {
     workspaceId: data.workspaceId,
     userId: data.userId,
+    actorUserId: data.actorUserId,
     type: NotificationType.TASK_ASSIGNED,
     title: "New Task Assigned",
     message: `${data.assignerName} assigned you a new task: ${data.taskTitle}`,
@@ -346,28 +402,63 @@ const createTaskAssignedNotification = async (
 };
 
 /**
- * Domain-specific helper for Invitation Received
+ * Domain-specific helper for Task Comments
  */
-const createInvitationNotification = async (
-  tx: Prisma.TransactionClient,
+const createTaskCommentNotification = async (
+  tx: PrismaTx,
   data: {
     workspaceId: string;
     userId: string;
+    actorUserId: string;
+    taskId: string;
+    taskTitle: string;
+    commenterName: string;
+  }
+) => {
+  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId, tx);
+  if (!preferences.taskCommentAdded) return null;
+
+  return await createNotification(tx, {
+    workspaceId: data.workspaceId,
+    userId: data.userId,
+    actorUserId: data.actorUserId,
+    type: NotificationType.TASK_COMMENT_ADDED,
+    title: "New Task Comment",
+    message: `${data.commenterName} commented on task: ${data.taskTitle}`,
+    entityType: "TASK",
+    entityId: data.taskId,
+    metadata: {
+      taskTitle: data.taskTitle,
+      commenterName: data.commenterName,
+    },
+  });
+};
+
+/**
+ * Domain-specific helper for Invitation Received
+ */
+const createInvitationReceivedNotification = async (
+  tx: PrismaTx,
+  data: {
+    workspaceId: string;
+    userId: string;
+    actorUserId: string;
     workspaceName: string;
     inviterName: string;
   }
 ) => {
-  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId);
+  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId, tx);
   if (!preferences.invitationReceived) return null;
 
   return await createNotification(tx, {
     workspaceId: data.workspaceId,
     userId: data.userId,
+    actorUserId: data.actorUserId,
     type: NotificationType.INVITATION_RECEIVED,
     title: "New Workspace Invitation",
     message: `${data.inviterName} invited you to join ${data.workspaceName}`,
     entityType: "INVITATION",
-    entityId: data.workspaceId, // In this context, entityId is the workspace itself
+    entityId: data.workspaceId,
     metadata: {
       workspaceName: data.workspaceName,
       inviterName: data.inviterName,
@@ -376,36 +467,143 @@ const createInvitationNotification = async (
 };
 
 /**
- * Domain-specific helper for Invoice Overdue
+ * Domain-specific helper for Invitation Accepted
  */
-const createInvoiceNotification = async (
-  tx: Prisma.TransactionClient,
+const createInvitationAcceptedNotification = async (
+  tx: PrismaTx,
   data: {
     workspaceId: string;
     userId: string;
-    invoiceId: string;
-    invoiceNumber: string;
-    type: NotificationType;
+    actorUserId: string;
+    workspaceName: string;
+    accepterName: string;
   }
 ) => {
-  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId);
-
-  // Guard based on type
-  if (data.type === NotificationType.INVOICE_OVERDUE && !preferences.invoiceOverdue) return null;
-  if (data.type === NotificationType.INVOICE_PAID && !preferences.invoicePaid) return null;
-  if (data.type === NotificationType.INVOICE_SENT && !preferences.invoiceSent) return null;
+  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId, tx);
+  if (!preferences.invitationAccepted) return null;
 
   return await createNotification(tx, {
     workspaceId: data.workspaceId,
     userId: data.userId,
-    type: data.type,
-    title: `Invoice ${data.type.split("_")[1].toLowerCase()}`,
-    message: `Invoice #${data.invoiceNumber} is ${data.type.split("_")[1].toLowerCase()}`,
+    actorUserId: data.actorUserId,
+    type: NotificationType.INVITATION_ACCEPTED,
+    title: "Invitation Accepted",
+    message: `${data.accepterName} has joined your workspace: ${data.workspaceName}`,
+    entityType: "WORKSPACE",
+    entityId: data.workspaceId,
+    metadata: {
+      workspaceName: data.workspaceName,
+      accepterName: data.accepterName,
+    },
+  });
+};
+
+/**
+ * Domain-specific helper for Invoice Sent
+ */
+const createInvoiceSentNotification = async (
+  tx: PrismaTx,
+  data: {
+    workspaceId: string;
+    recipientUserIds: string[];
+    actorUserId: string;
+    invoiceId: string;
+    invoiceNumber: string;
+    workspaceName: string;
+  }
+) => {
+  return await createBulkNotifications(tx, {
+    workspaceId: data.workspaceId,
+    actorUserId: data.actorUserId,
+    recipientUserIds: data.recipientUserIds,
+    type: NotificationType.INVOICE_SENT,
+    title: "Invoice Sent",
+    message: `Invoice #${data.invoiceNumber} has been sent for ${data.workspaceName}`,
+    entityType: "INVOICE",
+    entityId: data.invoiceId,
+    metadata: {
+      invoiceNumber: data.invoiceNumber,
+      workspaceName: data.workspaceName,
+    },
+  });
+};
+
+/**
+ * Domain-specific helper for Invoice Paid
+ */
+const createInvoicePaidNotification = async (
+  tx: PrismaTx,
+  data: {
+    workspaceId: string;
+    recipientUserIds: string[];
+    actorUserId: string;
+    invoiceId: string;
+    invoiceNumber: string;
+    workspaceName: string;
+  }
+) => {
+  return await createBulkNotifications(tx, {
+    workspaceId: data.workspaceId,
+    actorUserId: data.actorUserId,
+    recipientUserIds: data.recipientUserIds,
+    type: NotificationType.INVOICE_PAID,
+    title: "Invoice Paid",
+    message: `Invoice #${data.invoiceNumber} has been paid for ${data.workspaceName}`,
+    entityType: "INVOICE",
+    entityId: data.invoiceId,
+    metadata: {
+      invoiceNumber: data.invoiceNumber,
+      workspaceName: data.workspaceName,
+    },
+  });
+};
+
+/**
+ * Domain-specific helper for Invoice Overdue
+ */
+const createInvoiceOverdueNotification = async (
+  tx: PrismaTx,
+  data: {
+    workspaceId: string;
+    userId: string;
+    actorUserId: string;
+    invoiceId: string;
+    invoiceNumber: string;
+  }
+) => {
+  const preferences = await getNotificationPreferencesFromDB(data.workspaceId, data.userId, tx);
+  if (!preferences.invoiceOverdue) return null;
+
+  return await createNotification(tx, {
+    workspaceId: data.workspaceId,
+    userId: data.userId,
+    actorUserId: data.actorUserId,
+    type: NotificationType.INVOICE_OVERDUE,
+    title: "Invoice Overdue",
+    message: `Invoice #${data.invoiceNumber} is overdue`,
     entityType: "INVOICE",
     entityId: data.invoiceId,
     metadata: {
       invoiceNumber: data.invoiceNumber,
     },
+  });
+};
+
+const triggerDemoNotificationIntoDB = async (
+  workspaceId: string,
+  userId: string
+) => {
+  return await prisma.$transaction(async (tx) => {
+    return await createNotification(tx, {
+      workspaceId,
+      userId,
+      actorUserId: "system-demo-bot", // Bypass self-suppression for demo
+      type: NotificationType.SYSTEM_ANNOUNCEMENT,
+      title: "Welcome to OpsCore Notifications!",
+      message: "This is a demo notification to confirm your system is correctly fetching and displaying notifications. You can mark this as read or archive it.",
+      entityType: NotificationEntityType.SYSTEM,
+      entityId: "demo",
+    });
   });
 };
 
@@ -420,8 +618,14 @@ export const NotificationService = {
   deleteNotificationFromDB,
   getNotificationPreferencesFromDB,
   updateNotificationPreferencesIntoDB,
+  triggerDemoNotificationIntoDB,
   createNotification,
+  createBulkNotifications,
   createTaskAssignedNotification,
-  createInvitationNotification,
-  createInvoiceNotification,
+  createTaskCommentNotification,
+  createInvitationReceivedNotification,
+  createInvitationAcceptedNotification,
+  createInvoiceSentNotification,
+  createInvoicePaidNotification,
+  createInvoiceOverdueNotification,
 };

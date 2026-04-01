@@ -19,6 +19,9 @@ import {
   ICreateInvitationPayload,
   IInvitationResponse,
 } from "./invitation.interface";
+import { NotificationService } from "../notification/notification.service";
+import { auditLog } from "../../utils/auditLog";
+import { AuditLogAction, AuditLogEntityType } from "../../constants/auditLog";
 
 const INVITATION_EXPIRY_DAYS = 7;
 
@@ -121,6 +124,7 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
   try {
     const workspaceId = req.params.workspaceId as string;
     const invitedById = req.user!.id;
+    const inviterName = req.user!.name;
     const requesterEmail = req.user!.email.toLowerCase();
     const payload = req.body as ICreateInvitationPayload;
 
@@ -166,6 +170,7 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
         workspaceId,
         email,
         status: InvitationStatus.PENDING,
+        expiresAt: { gte: new Date() },
       },
     });
 
@@ -177,20 +182,51 @@ const createInvitation = async (req: Request): Promise<IInvitationResponse> => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + INVITATION_EXPIRY_DAYS);
 
-    const invitation = await prisma.workspaceInvitation.create({
-      data: {
-        workspaceId,
-        email,
-        role,
-        invitedById,
-        token,
-        expiresAt,
-      },
-      include: {
-        invitedBy: {
-          select: { id: true, name: true, email: true },
+    const invitation = await prisma.$transaction(async (tx) => {
+      const createdInvitation = await tx.workspaceInvitation.create({
+        data: {
+          workspaceId,
+          email,
+          role,
+          invitedById,
+          token,
+          expiresAt,
         },
-      },
+        include: {
+          invitedBy: {
+            select: { id: true, name: true, email: true },
+          },
+          workspace: {
+            select: { name: true },
+          },
+        },
+      });
+
+      // Notify existing user if found
+      if (invitedUser) {
+        await NotificationService.createInvitationReceivedNotification(tx, {
+          workspaceId,
+          userId: invitedUser.id,
+          actorUserId: invitedById,
+          workspaceName: createdInvitation.workspace.name,
+          inviterName: inviterName,
+        });
+      }
+
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: invitedById,
+        action: AuditLogAction.INVITATION_SENT,
+        entityType: AuditLogEntityType.INVITATION,
+        entityId: createdInvitation.id,
+        entityTitle: createdInvitation.email,
+        metadata: {
+          role: createdInvitation.role,
+        },
+      });
+
+      return createdInvitation;
     });
 
     const planContext = await resolveWorkspacePlanContext(workspaceId);
@@ -253,12 +289,28 @@ const cancelInvitation = async (req: Request): Promise<void> => {
       throw new AppError(status.BAD_REQUEST, "Only pending invitations can be cancelled");
     }
 
-    await prisma.workspaceInvitation.update({
-      where: { id: invitationId },
-      data: {
-        status: InvitationStatus.CANCELED,
-        canceledAt: new Date(),
-      },
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.workspaceInvitation.update({
+        where: { id: invitationId },
+        data: {
+          status: InvitationStatus.CANCELED,
+          canceledAt: new Date(),
+        },
+        select: {
+          id: true,
+          email: true,
+        },
+      });
+
+      await auditLog({
+        tx,
+        workspaceId,
+        actorUserId: req.user!.id,
+        action: AuditLogAction.INVITATION_REVOKED,
+        entityType: AuditLogEntityType.INVITATION,
+        entityId: updated.id,
+        entityTitle: updated.email,
+      });
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -346,6 +398,25 @@ const acceptInvitation = async (req: Request): Promise<IAcceptInvitationResponse
           acceptedAt: new Date(),
         },
       });
+
+      // Notify the inviter
+      await NotificationService.createInvitationAcceptedNotification(tx, {
+        workspaceId: invitation.workspaceId,
+        userId: invitation.invitedById,
+        actorUserId: userId,
+        workspaceName: invitation.workspace.name,
+        accepterName: req.user!.name,
+      });
+
+      await auditLog({
+        tx,
+        workspaceId: invitation.workspaceId,
+        actorUserId: userId,
+        action: AuditLogAction.INVITATION_ACCEPTED,
+        entityType: AuditLogEntityType.INVITATION,
+        entityId: invitation.id,
+        entityTitle: invitation.email,
+      });
     });
 
     return {
@@ -394,12 +465,29 @@ const declineInvitation = async (req: Request): Promise<void> => {
       throw new AppError(status.BAD_REQUEST, "Invitation has expired");
     }
 
-    await prisma.workspaceInvitation.update({
-      where: { id: invitation.id },
-      data: {
-        status: InvitationStatus.REJECTED,
-        rejectedAt: new Date(),
-      },
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.workspaceInvitation.update({
+        where: { id: invitation.id },
+        data: {
+          status: InvitationStatus.REJECTED,
+          rejectedAt: new Date(),
+        },
+        select: {
+          id: true,
+          email: true,
+          workspaceId: true,
+        },
+      });
+
+      await auditLog({
+        tx,
+        workspaceId: updated.workspaceId,
+        actorUserId: req.user!.id,
+        action: AuditLogAction.INVITATION_DECLINED,
+        entityType: AuditLogEntityType.INVITATION,
+        entityId: updated.id,
+        entityTitle: updated.email,
+      });
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
