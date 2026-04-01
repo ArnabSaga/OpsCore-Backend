@@ -32,7 +32,10 @@ export const auth = betterAuth({
   }),
 
   baseURL: envVars.BETTER_AUTH_URL,
-  trustedOrigins: [envVars.FRONTEND_URL],
+  trustedOrigins: [
+    envVars.FRONTEND_URL,
+    ...(envVars.NODE_ENV === "development" ? ["http://localhost:3000"] : []),
+  ],
 
   emailAndPassword: {
     enabled: true,
