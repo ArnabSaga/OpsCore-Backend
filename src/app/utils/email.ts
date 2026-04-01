@@ -51,9 +51,17 @@ export const sendEmail = async ({
   text,
 }: SendEmailOptions): Promise<void> => {
   try {
-    const templatePath = path.resolve(process.cwd(), `src/app/templates/${templateName}.ejs`);
+    const templatePath = path.join(process.cwd(), "src", "app", "templates", `${templateName}.ejs`);
 
-    console.log("[EMAIL] Rendering template:", templatePath);
+    console.log("[EMAIL] Sending email with config:", {
+      host: envVars.EMAIL_SENDER.SMTP_HOST,
+      port: envVars.EMAIL_SENDER.SMTP_PORT,
+      user: envVars.EMAIL_SENDER.SMTP_USER,
+      from: from ?? envVars.EMAIL_SENDER.SMTP_FROM,
+      to,
+      templatePath,
+      subject,
+    });
 
     const html = await ejs.renderFile(templatePath, templateData, {
       async: true,
@@ -73,8 +81,16 @@ export const sendEmail = async ({
     });
 
     console.log(`[EMAIL] Email sent successfully: ${info.messageId}`);
-  } catch (error) {
-    console.error("[EMAIL] Email sending error:", error);
+  } catch (error: any) {
+    console.error("[EMAIL] Email sending error FULL:", {
+      message: error?.message,
+      code: error?.code,
+      command: error?.command,
+      response: error?.response,
+      responseCode: error?.responseCode,
+      stack: error?.stack,
+    });
+
     throw new AppError(status.INTERNAL_SERVER_ERROR, "Failed to send email");
   }
 };
