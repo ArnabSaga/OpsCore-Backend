@@ -29,6 +29,7 @@ import {
 import { auditLog } from "../../utils/auditLog";
 import { AuditLogAction, AuditLogEntityType } from "../../constants/auditLog";
 import { calculateDiff } from "../../utils/diffHelper";
+import { assertWorkspaceRoleAllowed } from "../../helpers/permissionHelpers";
 
 const TASK_MEANINGFUL_FIELDS = [
   "title",
@@ -539,6 +540,12 @@ const createTask = async (req: Request): Promise<ITaskResponse> => {
     const createdByUserId = req.user!.id;
     const userName = req.user!.name;
     const payload = req.body as ICreateTaskPayload;
+
+    assertWorkspaceRoleAllowed(
+      req.workspaceRole,
+      [WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN],
+      "Only workspace owners and admins can create tasks."
+    );
 
     await assertPlanFeatureEnabled(workspaceId, "tasks.create");
     await assertPlanLimitNotReached({

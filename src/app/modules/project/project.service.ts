@@ -25,6 +25,7 @@ import {
 import { auditLog } from "../../utils/auditLog";
 import { AuditLogAction, AuditLogEntityType } from "../../constants/auditLog";
 import { calculateDiff } from "../../utils/diffHelper";
+import { assertWorkspaceRoleAllowed } from "../../helpers/permissionHelpers";
 
 const PROJECT_MEANINGFUL_FIELDS = ["name", "description", "status", "startDate", "endDate"];
 
@@ -203,6 +204,12 @@ const createProject = async (req: Request): Promise<IProjectResponse> => {
     const workspaceId = req.workspaceId!;
     const createdByUserId = req.user!.id;
     const payload = req.body as ICreateProjectPayload;
+
+    assertWorkspaceRoleAllowed(
+      req.workspaceRole,
+      [WorkspaceMemberRole.OWNER, WorkspaceMemberRole.ADMIN],
+      "Only workspace owners and admins can create projects."
+    );
 
     await assertPlanFeatureEnabled(workspaceId, "projects.create");
     await assertPlanLimitNotReached({
