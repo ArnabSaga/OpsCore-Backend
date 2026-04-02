@@ -327,6 +327,13 @@ const getMe = async (req: Request): Promise<IMeResponse> => {
             },
           },
         },
+        accounts: {
+          where: {
+            OR: [{ password: { not: null } }, { providerId: "credential" }],
+          },
+          select: { id: true },
+          take: 1,
+        },
       },
     });
 
@@ -350,6 +357,7 @@ const getMe = async (req: Request): Promise<IMeResponse> => {
     return {
       ...user,
       systemRole: String(user.systemRole),
+      hasPassword: user.accounts.length > 0,
       activeWorkspaceId,
       activeWorkspace: activeWorkspace
         ? {

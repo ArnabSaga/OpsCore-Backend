@@ -80,6 +80,7 @@ export interface IMeResponse {
   name: string;
   email: string;
   emailVerified: boolean;
+  hasPassword: boolean;
   image: string | null;
   systemRole: string;
   isActive: boolean;
