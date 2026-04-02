@@ -331,7 +331,7 @@ const getMe = async (req: Request): Promise<IMeResponse> => {
           where: {
             OR: [{ password: { not: null } }, { providerId: "credential" }],
           },
-          select: { id: true },
+          select: { providerId: true },
           take: 1,
         },
       },
